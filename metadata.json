@@ -1,0 +1,6 @@
+{
+  "name": "FishInvest",
+  "description": "Real-money fish investment platform. Invest in virtual fish, earn daily profit, and withdraw every Sunday.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

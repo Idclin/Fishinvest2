@@ -1,0 +1,148 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "The user profile document which tracks KYC info, wallet balance, level, streak and referral logs.",
+      "type": "object",
+      "properties": {
+        "telegram_id": { "type": "string", "description": "The Telegram user ID" },
+        "name": { "type": "string", "description": "Full legal bank account name" },
+        "phone": { "type": "string", "description": "Verified phone number" },
+        "bankName": { "type": "string", "description": "Bank name" },
+        "accountNumber": { "type": "string", "description": "Bank account number (10 digits)" },
+        "walletBalance": { "type": "number", "description": "Wallet balance in Nigerian Naira" },
+        "referralCode": { "type": "string", "description": "Personal invitation code" },
+        "referredBy": { "type": "string", "description": "Telegram ID of direct inviter" },
+        "streakCount": { "type": "number", "description": "Weekly withdrawal streak count" },
+        "level": { "type": "string", "description": "Farmer level based on lifetime stakes" },
+        "points": { "type": "number", "description": "Daily feeding reward points" },
+        "lastCheckIn": { "type": "string", "description": "Date of last dairy check-in (YYYY-MM-DD)" },
+        "virtualAccountNumber": { "type": "string", "description": "Providus Bank virtual account number allocated to this user" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account registration timestamp" }
+      },
+      "required": ["telegram_id", "walletBalance", "referralCode", "streakCount", "level", "points"]
+    },
+    "FishHolding": {
+      "title": "Fish Holding",
+      "description": "Active virtual fish asset generating daily value in user's pond.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string", "description": "Telegram ID of Owner" },
+        "fishType": { "type": "string", "enum": ["meluza", "schoolbian", "catfish"], "description": "Key identifier of high-yielding species" },
+        "quantity": { "type": "number", "description": "Amount of stock owned" },
+        "stakedDay": { "type": "string", "description": "Name of weekday this stock was bought (Monday through Saturday)" },
+        "stakedAt": { "type": "string", "format": "date-time", "description": "Time of purchase" },
+        "cycleId": { "type": "string", "description": "Target weekly cycle" }
+      },
+      "required": ["id", "userId", "fishType", "quantity", "stakedDay", "stakedAt"]
+    },
+    "Transaction": {
+      "title": "Financial Transaction",
+      "description": "Chronicle of deposits, withdrawals, fish purchases, and referral earnings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string", "description": "Subject telegram id" },
+        "type": { "type": "string", "enum": ["deposit", "withdraw", "buy", "referral"], "description": "Categorization of transfer" },
+        "amount": { "type": "number", "description": "Transfer volume in Naira" },
+        "status": { "type": "string", "enum": ["Paid", "Pending", "Failed"], "description": "Workflow execution status" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "type", "amount", "status", "createdAt"]
+    },
+    "Referral": {
+      "title": "Referral Linkage",
+      "description": "Information about successful user invites and rewards paid out.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "referrerId": { "type": "string" },
+        "refereeId": { "type": "string" },
+        "refereeName": { "type": "string" },
+        "bonusAmount": { "type": "number" },
+        "paidAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "referrerId", "refereeId", "bonusAmount", "paidAt"]
+    },
+    "Withdrawal": {
+      "title": "Bank Withdrawal Log",
+      "description": "Tracks simulated Naira payouts processed via Providus API / Flutterwave.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "bankName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "status": { "type": "string" },
+        "paidAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "amount", "bankName", "accountNumber", "status", "paidAt"]
+    },
+    "Admin": {
+      "title": "Platform Admin",
+      "description": "Authorized administrator credentials and name tracking document.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "password", "name"]
+    },
+    "FishMarketSpec": {
+      "title": "Fish Market Specification",
+      "description": "Dynamically added fish stock options managed by the admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "displayName": { "type": "string" },
+        "price": { "type": "number" },
+        "weeklyProfit": { "type": "number" },
+        "dailyProfit": { "type": "number" },
+        "tag": { "type": "string" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
+        "status": { "type": "string" },
+        "unitsSold": { "type": "number" },
+        "limited": { "type": "boolean" },
+        "unitsLimit": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "displayName", "price", "weeklyProfit", "dailyProfit", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{telegram_id}": {
+      "schema": "User",
+      "description": "User profile collection partitioned by Telegram profile ID"
+    },
+    "/fish_holdings/{holding_id}": {
+      "schema": "FishHolding",
+      "description": "Global holdings index of active farming stocks"
+    },
+    "/transactions/{transaction_id}": {
+      "schema": "Transaction",
+      "description": "Ledger entries of ledger updates"
+    },
+    "/referrals/{referral_id}": {
+      "schema": "Referral",
+      "description": "Tracks referral linkages and rewards"
+    },
+    "/withdrawals/{withdrawal_id}": {
+      "schema": "Withdrawal",
+      "description": "Tracks historic actualised payout requests"
+    },
+    "/admins/{admin_email}": {
+      "schema": "Admin",
+      "description": "Collection of platform operators"
+    },
+    "/fish_market_specs/{fish_id}": {
+      "schema": "FishMarketSpec",
+      "description": "Collection of dynamically manageable global fish market products"
+    }
+  }
+}
