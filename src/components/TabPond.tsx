@@ -12,6 +12,7 @@ interface TabPondProps {
   onFeedSuccess: () => void;
   addNotification: (msg: string) => void;
   setActiveTab: (tab: string) => void;
+  marketCatalog?: any[];
 }
 
 export default function TabPond({
@@ -21,6 +22,7 @@ export default function TabPond({
   onFeedSuccess,
   addNotification,
   setActiveTab,
+  marketCatalog = [],
 }: TabPondProps) {
   const [isFeeding, setIsFeeding] = React.useState(false);
   const [feedError, setFeedError] = React.useState('');
@@ -89,7 +91,7 @@ export default function TabPond({
   return (
     <div className="space-y-6 pb-20">
       {/* Animated Floating Pond Screen */}
-      <AnimatedPond holdings={groupedHoldings} />
+      <AnimatedPond holdings={groupedHoldings} marketCatalog={marketCatalog} />
 
       {/* Aggregate payout banner */}
       <div className="bg-brand-box border border-cyan-900/40 p-5 rounded-2xl space-y-3 shadow-[0_4px_20px_rgba(2,21,26,0.4)]">
@@ -189,7 +191,17 @@ export default function TabPond({
         ) : (
           <div className="space-y-3">
             {groupedHoldings.map((h, index) => {
-              const spec = FISH_SPECS[h.fishType];
+              const spec = FISH_SPECS[h.fishType] || (() => {
+                const custom = marketCatalog.find((m: any) => m.name === h.fishType || m.id === h.fishType);
+                if (!custom) return null;
+                return {
+                  displayName: custom.displayName,
+                  image: custom.image || custom.photo_url || custom.photoUrl,
+                  price: custom.price,
+                  dailyProfit: custom.dailyProfit !== undefined ? custom.dailyProfit : custom.daily_profit,
+                  weeklyProfit: custom.weeklyProfit !== undefined ? custom.weeklyProfit : custom.weekly_profit,
+                };
+              })();
               return (
                 <div key={index} className="bg-brand-box border border-cyan-900/30 rounded-xl p-4 flex items-center justify-between shadow-sm">
                   <div className="flex items-center gap-3">

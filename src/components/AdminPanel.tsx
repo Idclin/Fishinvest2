@@ -99,6 +99,9 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
     unitsLimit: '200'
   });
 
+  const [isUploadingImage, setIsUploadingImage] = React.useState(false);
+  const [uploadFeedback, setUploadFeedback] = React.useState('');
+
   // Table Filters & Searches
   const [usersSearch, setUsersSearch] = React.useState('');
   const [usersStatusFilter, setUsersStatusFilter] = React.useState('All');
@@ -197,7 +200,21 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
     try {
       const r = await fetch('/api/market-fish');
       const d = await r.json();
-      if (d.success) setMarketList(d.fish);
+      if (d.success && Array.isArray(d.fish)) {
+        const mapped = d.fish.map((item: any) => ({
+          ...item,
+          id: item.$id || item.id || item.name,
+          displayName: item.displayName || item.display_name || item.name,
+          price: item.price,
+          dailyProfit: item.dailyProfit !== undefined ? item.dailyProfit : item.daily_profit,
+          weeklyProfit: item.weeklyProfit !== undefined ? item.weeklyProfit : item.weekly_profit,
+          image: item.image || item.photo_url || item.photoUrl,
+          limited: !!(item.limited !== undefined ? item.limited : item.is_limited),
+          unitsLimit: item.unitsLimit !== undefined ? item.unitsLimit : item.units_limit,
+          unitsSold: item.unitsSold !== undefined ? item.unitsSold : item.units_sold,
+        }));
+        setMarketList(mapped);
+      }
     } catch (e) {
       console.error('Error loading market dynamic list:', e);
     }
@@ -465,15 +482,15 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
   const openMarketEditModal = (spec: any) => {
     setIsEditingMarketSpec(true);
     setMarketForm({
-      id: spec.id,
-      name: spec.name,
-      displayName: spec.displayName,
-      price: spec.price.toString(),
-      weeklyProfit: spec.weeklyProfit.toString(),
-      dailyProfit: spec.dailyProfit.toString(),
-      tag: spec.tag,
-      description: spec.description,
-      image: spec.image,
+      id: spec.id || '',
+      name: spec.name || '',
+      displayName: spec.displayName || '',
+      price: (spec.price ?? '').toString(),
+      weeklyProfit: (spec.weeklyProfit ?? '').toString(),
+      dailyProfit: (spec.dailyProfit ?? '').toString(),
+      tag: spec.tag || 'NEW',
+      description: spec.description || '',
+      image: spec.image || '',
       status: spec.status || 'Active',
       limited: !!spec.limited,
       unitsLimit: (spec.unitsLimit || 200).toString()
@@ -2189,15 +2206,123 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                   </motion.div>
                 )}
 
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 font-bold block">Species Thumbnail URL</label>
-                  <input 
-                    type="url" 
-                    value={marketForm.image}
-                    onChange={(e) => setMarketForm({...marketForm, image: e.target.value})}
-                    placeholder="https://images.unsplash.com/photo-..."
-                    className="w-full bg-brand-bg border border-cyan-900/40 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-cyan-500 font-sans"
-                  />
+                <div className="space-y-2 border border-cyan-900/20 bg-cyan-950/10 rounded-2xl p-4">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Product / Species Thumbnail</label>
+                    <span className="text-[9px] text-cyan-400 font-mono">Upload from local device or URL</span>
+                  </div>
+                  
+                  {/* File Upload Zone */}
+                  <div 
+                    onClick={() => document.getElementById('product-image-upload')?.click()}
+                    className="border border-dashed border-cyan-800/40 rounded-xl p-4 text-center cursor-pointer hover:bg-cyan-950/20 hover:border-cyan-500/50 transition-all duration-200 group relative overflow-hidden"
+                  >
+                    <input 
+                      type="file" 
+                      id="product-image-upload" 
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        
+                        try {
+                          setIsUploadingImage(true);
+                          setUploadFeedback('Reading file...');
+                          
+                          const reader = new FileReader();
+                          reader.onloadend = async () => {
+                            const base64String = reader.result as string;
+                            setUploadFeedback('Uploading to server...');
+                            
+                            const res = await fetch('/api/admin/upload', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                filename: file.name,
+                                base64: base64String
+                              })
+                            });
+                            
+                            const data = await res.json();
+                            if (data.success && data.url) {
+                              setMarketForm(prev => ({ ...prev, image: data.url }));
+                              setUploadFeedback('✅ Upload completed!');
+                              setTimeout(() => setUploadFeedback(''), 2000);
+                            } else {
+                              throw new Error(data.error || 'Server rejected file upload');
+                            }
+                          };
+                          reader.onerror = () => {
+                            throw new Error('Error reading local file');
+                          };
+                          reader.readAsDataURL(file);
+                        } catch (err: any) {
+                          console.error('File upload error:', err);
+                          setUploadFeedback(`❌ Error: ${err.message || 'Verification failure'}`);
+                        } finally {
+                          setIsUploadingImage(false);
+                        }
+                      }}
+                      className="hidden"
+                    />
+                    
+                    {marketForm.image ? (
+                      <div className="flex items-center gap-3 justify-center">
+                        <img 
+                          src={marketForm.image} 
+                          alt="Thumbnail Preview" 
+                          className="w-12 h-12 object-cover rounded-lg border border-cyan-500/30"
+                        />
+                        <div className="text-left">
+                          <p className="text-xs text-white font-bold font-sans">Image Selected</p>
+                          <p className="text-[10px] text-slate-400 max-w-[200px] truncate">{marketForm.image}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMarketForm(prev => ({ ...prev, image: '' }));
+                          }}
+                          className="ml-auto p-1 text-red-400 hover:text-red-300 rounded cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="text-cyan-400 flex justify-center mb-1 group-hover:scale-110 transition-transform duration-200">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-upload-cloud"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+                        </div>
+                        <p className="text-xs text-slate-200 font-bold">Click to select product image</p>
+                        <p className="text-[10px] text-slate-500 font-mono">PNG, JPG, BMP up to 10MB</p>
+                      </div>
+                    )}
+                    
+                    {isUploadingImage && (
+                      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xs flex flex-col items-center justify-center gap-1">
+                        <div className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+                        <p className="text-[10px] text-cyan-400 font-mono animate-pulse">{uploadFeedback || 'Uploading...'}</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {uploadFeedback && !isUploadingImage && (
+                    <p className={`text-[10px] text-center font-mono mt-1 ${uploadFeedback.startsWith('❌') ? 'text-red-400' : 'text-emerald-400'}`}>
+                      {uploadFeedback}
+                    </p>
+                  )}
+
+                  {/* Manual input backup */}
+                  <div className="pt-2">
+                    <p className="text-[9px] text-slate-500 font-bold block mb-1">OR ENTER THUMBNAIL URL MANUALLY</p>
+                    <input 
+                      type="text" 
+                      value={marketForm.image}
+                      onChange={(e) => setMarketForm({...marketForm, image: e.target.value})}
+                      placeholder="https://images.unsplash.com/photo-..."
+                      className="w-full bg-brand-bg border border-cyan-900/40 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-sans"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1">

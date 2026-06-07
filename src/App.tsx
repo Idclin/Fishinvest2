@@ -14,15 +14,12 @@ import TabRanks from './components/TabRanks.tsx';
 import AdminPanel from './components/AdminPanel.tsx';
 
 // Icons
-import { Compass, Database, Landmark, Heart, Users, Trophy, Bell, HelpCircle, Activity, ShieldCheck } from 'lucide-react';
+import { Compass, Database, Landmark, Heart, Users, Trophy, Bell, HelpCircle, Activity, ShieldCheck, LogOut } from 'lucide-react';
+import UserAuth from './components/UserAuth.tsx';
 
 export default function App() {
-  const [simulatedId, setSimulatedId] = useState(() => {
-    const existing = localStorage.getItem('fishinvest_user_id');
-    if (existing) return existing;
-    const newId = `tel_${Math.floor(1000 + Math.random() * 9000)}`;
-    localStorage.setItem('fishinvest_user_id', newId);
-    return newId;
+  const [simulatedId, setSimulatedId] = useState<string | null>(() => {
+    return localStorage.getItem('fishinvest_user_id') || null;
   });
   const [simulatedName, setSimulatedName] = useState('Clinton N.');
   const [simulatedDay, setSimulatedDay] = useState(() => {
@@ -167,8 +164,20 @@ export default function App() {
 
       // 3. Fetch dynamic market catalog
       const catData = await fetchJson('/api/market-fish');
-      if (catData) {
-        setMarketCatalog(catData.fish || []);
+      if (catData && Array.isArray(catData.fish)) {
+        const mapped = catData.fish.map((item: any) => ({
+          ...item,
+          id: item.$id || item.id || item.name,
+          displayName: item.displayName || item.display_name || item.name,
+          price: item.price,
+          dailyProfit: item.dailyProfit !== undefined ? item.dailyProfit : item.daily_profit,
+          weeklyProfit: item.weeklyProfit !== undefined ? item.weeklyProfit : item.weekly_profit,
+          image: item.image || item.photo_url || item.photoUrl,
+          limited: !!(item.limited !== undefined ? item.limited : item.is_limited),
+          unitsLimit: item.unitsLimit !== undefined ? item.unitsLimit : item.units_limit,
+          unitsSold: item.unitsSold !== undefined ? item.unitsSold : item.units_sold,
+        }));
+        setMarketCatalog(mapped);
       }
 
       // 4. Fetch leaderboard rankings
@@ -179,12 +188,28 @@ export default function App() {
     } catch (err) {
       console.error('Error synchronizing real-time datasets:', err);
     } finally {
-      setLoading(false);
+      if (simulatedId) {
+        setLoading(false);
+      }
     }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('fishinvest_user_id');
+    localStorage.removeItem('fishinvest_admin_unlocked');
+    setSimulatedId(null);
+    setUser(null);
+    setIsAdminUnlocked(false);
+    addNotification('🔒 Security session ended. Logged out.');
   };
 
   useEffect(() => {
     if (!simulatedId) return;
+
+    if (simulatedId === 'admin_owner') {
+      localStorage.setItem('fishinvest_admin_unlocked', 'true');
+      setIsAdminUnlocked(true);
+    }
 
     // Initial load
     setLoading(true);
@@ -230,6 +255,7 @@ export default function App() {
             onFeedSuccess={loadUserData}
             addNotification={addNotification}
             setActiveTab={setActiveTab}
+            marketCatalog={marketCatalog}
           />
         );
       case 'deposit':
@@ -274,6 +300,33 @@ export default function App() {
 
   if (showAdminPanel) {
     return <AdminPanel onBackToApp={() => setShowAdminPanel(false)} />;
+  }
+
+  if (!simulatedId) {
+    return (
+      <div className="min-h-screen bg-brand-bg text-slate-100 flex flex-col font-sans relative overflow-x-hidden justify-center items-center">
+        {/* Floating Animated Bubbles background decoration */}
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+          <div className="absolute top-10 left-10 w-32 h-32 rounded-full bg-cyan-500/10 blur-3xl" />
+          <div className="absolute bottom-20 right-5 w-64 h-64 rounded-full bg-blue-500/10 blur-3xl" />
+        </div>
+        
+        <UserAuth 
+          referredByQueryParam={referredByQuery} 
+          onAuthSuccess={(u: any) => {
+            localStorage.setItem('fishinvest_user_id', u.telegram_id);
+            setSimulatedId(u.telegram_id);
+            setUser(u);
+            if (u.telegram_id === 'admin_owner' || u.email === 'idehenclintonn@gmail.com') {
+              localStorage.setItem('fishinvest_admin_unlocked', 'true');
+              setIsAdminUnlocked(true);
+              setShowAdminPanel(true);
+            }
+            addNotification(`🛡️ Authorized successfully: ${u.name || u.email}`);
+          }} 
+        />
+      </div>
+    );
   }
 
   return (
@@ -434,11 +487,22 @@ export default function App() {
                 </div>
               </div>
               
-              <div className="text-right mr-20">
-                <div className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Current Day</div>
-                <div className="text-xs font-black font-mono text-cyan-400 uppercase tracking-widest bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-lg inline-block">
-                  {simulatedDay}
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Current Day</div>
+                  <div className="text-xs font-black font-mono text-cyan-400 uppercase tracking-widest bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-lg inline-block">
+                    {simulatedDay}
+                  </div>
                 </div>
+
+                <button
+                  onClick={handleLogout}
+                  className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-black font-sans shadow"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline font-bold">Logout</span>
+                </button>
               </div>
             </header>
           )}

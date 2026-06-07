@@ -8,6 +8,8 @@ dotenv.config();
 const SCHEMA_CONFIG: Record<string, Array<{ key: string; type: 'string' | 'float' | 'integer' | 'boolean'; size?: number; required?: boolean; default?: any }>> = {
   [USERS]: [
     { key: 'telegram_id', type: 'string', size: 255 },
+    { key: 'email', type: 'string', size: 255, required: false },
+    { key: 'password', type: 'string', size: 255, required: false },
     { key: 'name', type: 'string', size: 255, required: false },
     { key: 'phone', type: 'string', size: 255, required: false },
     { key: 'bank_name', type: 'string', size: 255, required: false },
@@ -21,10 +23,13 @@ const SCHEMA_CONFIG: Record<string, Array<{ key: string; type: 'string' | 'float
     { key: 'level', type: 'string', size: 255, required: false },
     { key: 'status', type: 'string', size: 255, required: false },
     { key: 'last_checkin', type: 'string', size: 255, required: false },
-    { key: 'created_at', type: 'string', size: 255, required: false }
+    { key: 'created_at', type: 'string', size: 255, required: false },
+    { key: 'points', type: 'integer', required: false, default: 0 },
+    { key: 'admin_notifications', type: 'string', size: 10000, required: false }
   ],
   [FISH_MARKET]: [
     { key: 'name', type: 'string', size: 255 },
+    { key: 'display_name', type: 'string', size: 255, required: false },
     { key: 'photo_url', type: 'string', size: 1000, required: false },
     { key: 'tag', type: 'string', size: 255, required: false },
     { key: 'description', type: 'string', size: 2000, required: false },
@@ -130,7 +135,7 @@ const memoryDb: InMemoryDb = {
 // Initialize Appwrite components safely
 let appwriteClient: Client | null = null;
 let appwriteDatabases: Databases | null = null;
-const databaseId = process.env.APPWRITE_DATABASE_ID || 'fishinvest_db';
+export let databaseId = 'Lockin';
 
 const endpoint = process.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1';
 const projectId = process.env.APPWRITE_PROJECT_ID;
@@ -180,12 +185,33 @@ export async function initializeDatabaseSchema() {
       await dbs.get(databaseId);
       console.log(`✅ [Appwrite DB] Located active database: "${databaseId}"`);
     } catch (e: any) {
-      console.log(`🔄 [Appwrite DB] Database "${databaseId}" not found. Creating a new database...`);
-      await dbs.create(databaseId, 'FishInvest Production DB');
+      console.log(`🔄 [Appwrite DB] Database "${databaseId}" not found. Attempting to create a new database...`);
+      try {
+        await dbs.create(databaseId, 'FishInvest Production DB');
+        console.log(`✅ [Appwrite DB] Successfully created database: "${databaseId}"`);
+      } catch (createErr: any) {
+        if (createErr.code === 403 || createErr.message?.includes('limit') || createErr.message?.includes('plan') || createErr.type === 'additional_resource_not_allowed') {
+          console.warn(`⚠️ [Appwrite DB] Could not create database "${databaseId}" because of standard Appwrite Cloud free-tier quota limits.`);
+          console.log('🔄 [Appwrite DB] Scanning for any existing available database inside your project...');
+          const listRes = await dbs.list();
+          if (listRes.databases && listRes.databases.length > 0) {
+            const firstDb = listRes.databases[0];
+            databaseId = firstDb.$id;
+            console.log(`🚨 [Appwrite DB] Intelligently switched database targets to your existing: "${databaseId}" (${firstDb.name})!`);
+          } else {
+            throw createErr;
+          }
+        } else {
+          throw createErr;
+        }
+      }
     }
 
     // Index mappings required for active filter collections
     const INDEX_CONFIG: Record<string, Array<{ key: string; type: 'key' | 'unique' | 'fulltext'; attributes: string[] }>> = {
+      [USERS]: [
+        { key: 'email', type: 'key', attributes: ['email'] }
+      ],
       [FISH_HOLDINGS]: [
         { key: 'user_id', type: 'key', attributes: ['user_id'] }
       ],
@@ -397,6 +423,10 @@ export const dbService = {
 
     try {
       const sanitized = this.sanitizeForAppwrite(collectionId, data);
+      if (Object.keys(sanitized).length === 0) {
+        console.log(`⚠️ [Appwrite DB] Skipping empty updateDocument call on "${collectionId}" / "${documentId}"`);
+        return this.mapDocumentOut(collectionId, store ? store[documentId] : data);
+      }
       const doc = await dbs.updateDocument(databaseId, collectionId, documentId, sanitized);
       return this.mapDocumentOut(collectionId, doc);
     } catch (err: any) {
@@ -445,7 +475,11 @@ export const dbService = {
         } else if (attr.type === 'boolean') {
           result[attr.key] = !!val;
         } else {
-          result[attr.key] = String(val);
+          if (Array.isArray(val) || (val && typeof val === 'object')) {
+            result[attr.key] = JSON.stringify(val);
+          } else {
+            result[attr.key] = String(val);
+          }
         }
       }
     }
@@ -460,10 +494,15 @@ export const dbService = {
 
     for (const attr of schema) {
       if (doc[attr.key] !== undefined) {
-        const camelKey = attr.key.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
-        if (camelKey !== attr.key) {
-          result[camelKey] = doc[attr.key];
+        let val = doc[attr.key];
+        if (typeof val === 'string' && ((val.startsWith('[') && val.endsWith(']')) || (val.startsWith('{') && val.endsWith('}')))) {
+          try {
+            val = JSON.parse(val);
+          } catch (e) {}
         }
+        const camelKey = attr.key.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
+        result[camelKey] = val;
+        result[attr.key] = val;
       }
     }
     return result;

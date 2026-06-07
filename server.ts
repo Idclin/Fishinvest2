@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { ID, Query } from 'node-appwrite';
 import { dbService, initializeDatabaseSchema } from './appwriteService.js';
@@ -16,9 +17,17 @@ import {
 } from './collections.js';
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
 const PORT = 3000;
+
+// Ensure uploads directory exists
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Helper to calculate pro-rated fish values
 const FISH_SPECS = {
@@ -116,6 +125,126 @@ async function seedFishMarket() {
     console.error('Seeding fish specs error:', err);
   }
 }
+
+// ==========================================
+// USER PASSWORD AUTHENTICATION APIS
+// ==========================================
+
+// Authentication: Sign Up
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { email, password, name, phone, bankName, accountNumber, referredBy } = req.body;
+
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'Email, password, and full name are required.' });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+
+    // Check if email already exists
+    const existingUsers = await dbService.listDocuments(USERS, [Query.equal('email', trimmedEmail)]);
+    if (existingUsers && existingUsers.length > 0) {
+      return res.status(400).json({ error: 'An account with this email already exists.' });
+    }
+
+    // Generate fresh user ID - keep custom ID for admin
+    const isOwner = trimmedEmail === 'idehenclintonn@gmail.com';
+    const userId = isOwner ? 'admin_owner' : 'usr_' + Math.floor(100000 + Math.random() * 900000).toString();
+    const referralCode = `ref_${userId}`;
+
+    const newUser: any = {
+      telegram_id: userId,
+      email: trimmedEmail,
+      password: password, // Store in cleartext for simple secure simulation context
+      name: isOwner ? 'Idehen Clinton (Admin)' : name.trim(),
+      phone: (phone || '').trim(),
+      bank_name: bankName || 'Providus Bank',
+      account_number: (accountNumber || '').trim(),
+      wallet_balance: isOwner ? 5000000.0 : 0.0,
+      total_deposited: isOwner ? 5000000.0 : 0.0,
+      total_withdrawn: 0.0,
+      referral_code: referralCode,
+      referred_by: '',
+      streak_count: isOwner ? 30 : 0,
+      level: isOwner ? 'Master Farmer' : 'Beginner Farmer',
+      status: 'Active',
+      created_at: new Date().toISOString(),
+      last_checkin: ''
+    };
+
+    // If referred by exists and is valid
+    if (referredBy && referredBy.trim()) {
+      const inviterDoc = await dbService.getDocument(USERS, referredBy.trim());
+      if (inviterDoc) {
+        newUser.referred_by = referredBy.trim();
+      }
+    }
+
+    await dbService.createDocument(USERS, userId, newUser);
+    return res.json({ success: true, user: newUser, isAdmin: isOwner });
+  } catch (error: any) {
+    console.error('Error signing up user:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Authentication: Log In
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+
+    // Check if it is the main administrator account
+    if (trimmedEmail === 'idehenclintonn@gmail.com' && password === 'moonlight17') {
+      const adminId = 'admin_owner';
+      let adminUser = await dbService.getDocument(USERS, adminId);
+      if (!adminUser) {
+        // Auto create the administrator profile as a database document if not found
+        adminUser = {
+          telegram_id: adminId,
+          email: 'idehenclintonn@gmail.com',
+          password: 'moonlight17',
+          name: 'Idehen Clinton (Admin)',
+          phone: '+2348000000000',
+          bank_name: 'Providus Bank',
+          account_number: '1029384756',
+          wallet_balance: 5000000.0,
+          total_deposited: 5000000.0,
+          total_withdrawn: 0.0,
+          referral_code: 'ref_admin_clinton',
+          referred_by: '',
+          streak_count: 30,
+          level: 'Master Farmer',
+          status: 'Active',
+          created_at: new Date().toISOString(),
+          last_checkin: ''
+        };
+        await dbService.createDocument(USERS, adminId, adminUser);
+      }
+      return res.json({ success: true, user: adminUser, isAdmin: true });
+    }
+
+    const matches = await dbService.listDocuments(USERS, [Query.equal('email', trimmedEmail)]);
+
+    if (!matches || matches.length === 0) {
+      return res.status(401).json({ error: 'No account found with this email. Please sign up.' });
+    }
+
+    const userDoc = matches[0];
+    if (userDoc.password !== password) {
+      return res.status(401).json({ error: 'Incorrect password.' });
+    }
+
+    return res.json({ success: true, user: userDoc, isAdmin: trimmedEmail === 'idehenclintonn@gmail.com' });
+  } catch (error: any) {
+    console.error('Error logging in user:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // 1. Get or Create User Context (Autobootstrapping on connection)
 app.get('/api/users/:telegramId', async (req, res) => {
@@ -628,6 +757,38 @@ app.post('/api/admin/login', async (req, res) => {
     }
     return res.status(401).json({ error: 'Invalid admin credentials' });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin Image Upload Endpoint
+app.post('/api/admin/upload', async (req, res) => {
+  try {
+    const { filename, base64 } = req.body;
+    if (!filename || !base64) {
+      return res.status(400).json({ error: 'Filename and base64 data are required.' });
+    }
+
+    // Extract raw base64 data from potential data URL prefixes
+    const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    let dataBuffer: Buffer;
+    
+    if (matches && matches.length === 3) {
+      dataBuffer = Buffer.from(matches[2], 'base64');
+    } else {
+      dataBuffer = Buffer.from(base64, 'base64');
+    }
+
+    const ext = path.extname(filename) || '.jpg';
+    const uniqueName = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}${ext}`;
+    const destination = path.join(UPLOADS_DIR, uniqueName);
+
+    await fs.promises.writeFile(destination, dataBuffer);
+    
+    const imageUrl = `/uploads/${uniqueName}`;
+    res.json({ success: true, url: imageUrl });
+  } catch (error: any) {
+    console.error('Core file upload error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1282,6 +1443,18 @@ app.get('/api/admin/referrals', async (req, res) => {
       topReferrers: topReferrers.slice(0, 10)
     });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin global transactions list
+app.get('/api/admin/transactions', async (req, res) => {
+  try {
+    const list = await dbService.listDocuments(TRANSACTIONS);
+    list.sort((a, b) => new Date(b.created_at || b.createdAt).getTime() - new Date(a.created_at || a.createdAt).getTime());
+    res.json({ success: true, transactions: list });
+  } catch (error: any) {
+    console.error('Error fetching admin transactions:', error);
     res.status(500).json({ error: error.message });
   }
 });

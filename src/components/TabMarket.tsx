@@ -112,15 +112,15 @@ export default function TabMarket({
         name: item.name || item.id,
         displayName: item.displayName,
         price: item.price,
-        dailyProfit: item.dailyProfit,
-        weeklyProfit: item.weeklyProfit,
-        image: item.image,
+        dailyProfit: item.dailyProfit !== undefined ? item.dailyProfit : item.daily_profit,
+        weeklyProfit: item.weeklyProfit !== undefined ? item.weeklyProfit : item.weekly_profit,
+        image: item.image || item.photo_url || item.photoUrl,
         color: item.color || (item.name === 'meluza' ? '#38bdf8' : item.name === 'schoolbian' ? '#4ade80' : item.name === 'catfish' ? '#fb923c' : '#06b6d4'),
         tag: item.tag || 'PREMIUM',
         status: item.status || 'Active',
-        limited: !!item.limited,
-        unitsLimit: item.unitsLimit || 0,
-        unitsSold: item.unitsSold || 0,
+        limited: !!(item.limited !== undefined ? item.limited : item.is_limited),
+        unitsLimit: item.unitsLimit !== undefined ? item.unitsLimit : item.units_limit,
+        unitsSold: item.unitsSold !== undefined ? item.unitsSold : item.units_sold,
         description: item.description
       })).filter(spec => spec.status === 'Active');
     }

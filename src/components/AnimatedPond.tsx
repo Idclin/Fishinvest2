@@ -7,9 +7,10 @@ interface AnimatedPondProps {
     fishType: FishType;
     quantity: number;
   }[];
+  marketCatalog?: any[];
 }
 
-export default function AnimatedPond({ holdings }: AnimatedPondProps) {
+export default function AnimatedPond({ holdings, marketCatalog = [] }: AnimatedPondProps) {
   // Flatten holdings so we render exactly the number of fish owned
   const fishes = React.useMemo(() => {
     const list: FishType[] = [];
@@ -88,7 +89,20 @@ export default function AnimatedPond({ holdings }: AnimatedPondProps) {
         ) : (
           <div className="w-full h-full relative">
             {fishes.map((type, idx) => {
-              const spec = FISH_SPECS[type];
+              const spec = FISH_SPECS[type] || (() => {
+                const custom = marketCatalog.find((m: any) => m.name === type || m.id === type);
+                if (!custom) return null;
+                return {
+                  displayName: custom.displayName,
+                  image: custom.image || custom.photo_url || custom.photoUrl,
+                  price: custom.price,
+                  color: '#06b6d4',
+                  dailyProfit: custom.dailyProfit !== undefined ? custom.dailyProfit : custom.daily_profit,
+                  weeklyProfit: custom.weeklyProfit !== undefined ? custom.weeklyProfit : custom.weekly_profit,
+                };
+              })();
+              if (!spec) return null;
+              
               const pos = fishPositions[idx] || {
                 top: 40,
                 left: 40,
