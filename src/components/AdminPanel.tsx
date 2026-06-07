@@ -102,6 +102,12 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
   const [isUploadingImage, setIsUploadingImage] = React.useState(false);
   const [uploadFeedback, setUploadFeedback] = React.useState('');
 
+  // App-wide Logo / Icon Configuration States
+  const [adminAppIconUrl, setAdminAppIconUrl] = React.useState<string | null>(null);
+  const [pastUploads, setPastUploads] = React.useState<string[]>([]);
+  const [isUpdatingBrandIcon, setIsUpdatingBrandIcon] = React.useState(false);
+  const [brandFeedback, setBrandFeedback] = React.useState('');
+
   // Table Filters & Searches
   const [usersSearch, setUsersSearch] = React.useState('');
   const [usersStatusFilter, setUsersStatusFilter] = React.useState('All');
@@ -198,6 +204,26 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
 
   const loadMarket = async () => {
     try {
+      // Load current brand logo
+      fetch('/api/app-icon')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.url) {
+            setAdminAppIconUrl(data.url);
+          }
+        })
+        .catch(err => console.error('Error loading brand icon in admin:', err));
+
+      // Load all past uploads
+      fetch('/api/admin/uploads')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.files)) {
+            setPastUploads(data.files);
+          }
+        })
+        .catch(err => console.error('Error loading past uploads list:', err));
+
       const r = await fetch('/api/market-fish');
       const d = await r.json();
       if (d.success && Array.isArray(d.fish)) {
@@ -537,6 +563,9 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
       if (r.ok) {
         loadMarket();
         alert('Specs cleared.');
+      } else {
+        const error = await r.json();
+        alert(error.error || 'Failed to delete dynamic breed stock.');
       }
     } catch (e) {
       alert('Error during spec deletion.');
@@ -1814,6 +1843,242 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                       </div>
                     ))
                   )}
+                </div>
+
+                {/* Branding administration section */}
+                <div className="border-t border-cyan-950/40 pt-8 mt-10 space-y-6 font-sans">
+                  <div>
+                    <h3 className="text-white font-sans font-black text-xs tracking-wide uppercase">Application Identity & Global Branding</h3>
+                    <p className="text-[10px] text-slate-400">Lock, view, or change the universal App icon/favicon dynamically. All updates reflect instantly for investors.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-brand-bg/40 border border-cyan-900/10 rounded-2xl p-5">
+                    
+                    {/* Left Panel: Current Active Logo */}
+                    <div className="space-y-4 flex flex-col justify-between">
+                      <div className="space-y-3">
+                        <label className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider block">Active Brand Icon</label>
+                        <div className="flex items-center gap-4">
+                          {adminAppIconUrl ? (
+                            <div className="relative group">
+                              <img 
+                                src={adminAppIconUrl} 
+                                alt="FishInvest Logo" 
+                                className="w-20 h-20 rounded-2xl object-cover ring-2 ring-cyan-500/50 shadow-lg shadow-cyan-500/15" 
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-20 h-20 rounded-2xl bg-cyan-950/40 border border-cyan-900/60 flex items-center justify-center text-slate-500 text-xs font-bold leading-none">
+                              No Icon
+                            </div>
+                          )}
+                          <div className="space-y-1">
+                            <h4 className="text-white font-sans font-black text-xs">FishInvest Trading System</h4>
+                            <p className="text-[10px] text-slate-400 max-w-[240px] truncate leading-normal text-ellipsis overflow-hidden" title={adminAppIconUrl || 'Default Active Icon'}>
+                              Source: <span className="font-mono text-[9px] text-slate-500">{adminAppIconUrl || 'Dynamic Discover Fallback'}</span>
+                            </p>
+                            <span className="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              ● Loaded Successfully
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Manual Brand URL config row */}
+                      <div className="space-y-1.5 pt-4 border-t border-cyan-950/20">
+                        <label className="text-[10px] text-slate-400 font-bold block uppercase">Custom Brand URL Injection</label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            id="custom-brand-icon-url" 
+                            placeholder="https://..." 
+                            defaultValue={adminAppIconUrl || ''}
+                            className="flex-1 bg-brand-bg border border-cyan-900/40 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-sans"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const input = document.getElementById('custom-brand-icon-url') as HTMLInputElement;
+                              const urlVal = input?.value?.trim();
+                              if (!urlVal) {
+                                alert('Please input a valid URL first.');
+                                return;
+                              }
+                              try {
+                                setIsUpdatingBrandIcon(true);
+                                setBrandFeedback('Updating app branding...');
+                                const res = await fetch('/api/admin/set-app-icon', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ url: urlVal })
+                                });
+                                const data = await res.json();
+                                if (data.success && data.url) {
+                                  setAdminAppIconUrl(data.url);
+                                  setBrandFeedback('✅ App icon updated successfully!');
+                                  // Also update DOM favicon
+                                  const link: any = document.querySelector("link[rel*='icon']") || document.createElement('link');
+                                  link.type = 'image/x-icon';
+                                  link.rel = 'shortcut icon';
+                                  link.href = data.url;
+                                  document.getElementsByTagName('head')[0].appendChild(link);
+                                  setTimeout(() => setBrandFeedback(''), 4000);
+                                } else {
+                                  throw new Error(data.error || 'Server rejected');
+                                }
+                              } catch (err: any) {
+                                alert(err.message || 'Error occurred');
+                              } finally {
+                                setIsUpdatingBrandIcon(false);
+                              }
+                            }}
+                            className="bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-sans font-black text-[10px] px-4 py-2 rounded-xl uppercase tracking-wider block border-none cursor-pointer"
+                          >
+                            Set URL
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Panel: Alternative / Previous Image Gallery & Brand Uploader */}
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider block">Historical Gallery & Drop Uploader</label>
+                        <span className="text-[9px] text-slate-500 font-mono">Select a thumbnail to lock as the App icon</span>
+                      </div>
+
+                      {/* Brand File Upload button */}
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById('brand-logo-file-upload')?.click()}
+                        className="w-full bg-cyan-950/20 border border-dashed border-cyan-800/40 hover:bg-cyan-950/45 hover:border-cyan-500/50 rounded-xl py-3 px-4 transition-all duration-200 cursor-pointer text-center font-sans font-black text-xs text-slate-200 uppercase tracking-wider"
+                      >
+                        Upload custom image file
+                      </button>
+                      <input 
+                        type="file" 
+                        id="brand-logo-file-upload" 
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            setIsUpdatingBrandIcon(true);
+                            setBrandFeedback('Reading icon file...');
+                            const reader = new FileReader();
+                            reader.onloadend = async () => {
+                              try {
+                                setBrandFeedback('Uploading base64 metadata...');
+                                const rUpload = await fetch('/api/admin/upload', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ filename: file.name, base64: reader.result as string })
+                                });
+                                const dUpload = await rUpload.json();
+                                if (dUpload.success && dUpload.url) {
+                                  setBrandFeedback('Assigning active brand icon...');
+                                  const rSet = await fetch('/api/admin/set-app-icon', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ url: dUpload.url })
+                                  });
+                                  const dSet = await rSet.json();
+                                  if (dSet.success && dSet.url) {
+                                    setAdminAppIconUrl(dSet.url);
+                                    setBrandFeedback('✅ App icon successfully set!');
+                                    // Update domestic favicon link
+                                    const link: any = document.querySelector("link[rel*='icon']") || document.createElement('link');
+                                    link.type = 'image/x-icon';
+                                    link.rel = 'shortcut icon';
+                                    link.href = dSet.url;
+                                    document.getElementsByTagName('head')[0].appendChild(link);
+                                    
+                                    // Refresh historical files
+                                    fetch('/api/admin/uploads')
+                                      .then(res => res.json())
+                                      .then(d => { if (d.success) setPastUploads(d.files); });
+                                    setTimeout(() => setBrandFeedback(''), 4000);
+                                  } else {
+                                    throw new Error(dSet.error || 'Identity mapping rejected');
+                                  }
+                                } else {
+                                  throw new Error(dUpload.error || 'File write failure');
+                                }
+                              } catch (err: any) {
+                                alert(err.message || 'Identity update failed');
+                                setBrandFeedback('');
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          } catch (err: any) {
+                            alert(err.message || 'Read error');
+                          } finally {
+                            setIsUpdatingBrandIcon(false);
+                          }
+                        }}
+                      />
+
+                      {/* List of past uploaded files */}
+                      <div className="space-y-2">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Previously Uploaded Files ({pastUploads.length})</span>
+                        <div className="grid grid-cols-4 gap-2.5 max-h-[110px] overflow-y-auto pr-1">
+                          {pastUploads.map((url, idx) => {
+                            const isCurrent = adminAppIconUrl === url;
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    setIsUpdatingBrandIcon(true);
+                                    setBrandFeedback('Switching app branding...');
+                                    const res = await fetch('/api/admin/set-app-icon', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ url })
+                                    });
+                                    const data = await res.json();
+                                    if (data.success && data.url) {
+                                      setAdminAppIconUrl(data.url);
+                                      setBrandFeedback('✅ Brand image locked!');
+                                      const link: any = document.querySelector("link[rel*='icon']") || document.createElement('link');
+                                      link.type = 'image/x-icon';
+                                      link.rel = 'shortcut icon';
+                                      link.href = data.url;
+                                      document.getElementsByTagName('head')[0].appendChild(link);
+                                      setTimeout(() => setBrandFeedback(''), 3000);
+                                    }
+                                  } catch (err: any) {
+                                    alert(err.message || 'Toggle failure');
+                                  } finally {
+                                    setIsUpdatingBrandIcon(false);
+                                  }
+                                }}
+                                className={`h-11 rounded-lg overflow-hidden border cursor-pointer relative group transition-all duration-200 outline-none select-none p-0 bg-transparent ${isCurrent ? 'border-cyan-500 scale-[0.97] ring-1 ring-cyan-500/50' : 'border-cyan-900/30 hover:border-cyan-500/40'}`}
+                              >
+                                <img src={url} alt={`Upload ${idx}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                {isCurrent && (
+                                  <div className="absolute inset-0 bg-cyan-950/60 flex items-center justify-center">
+                                    <span className="text-[8px] bg-cyan-500 text-slate-950 font-sans font-black uppercase px-1 rounded-sm leading-none py-0.5">Active</span>
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {brandFeedback && (
+                        <p className={`text-[10px] text-center font-mono py-1.5 rounded-lg border bg-cyan-950/10 ${brandFeedback.startsWith('✅') ? 'text-emerald-400 border-emerald-900/30' : 'text-cyan-400 border-cyan-900/30'}`}>
+                          {isUpdatingBrandIcon && <span className="inline-block w-2.5 h-2.5 border border-cyan-400 border-t-transparent rounded-full animate-spin mr-1.5 align-middle"></span>}
+                          {brandFeedback}
+                        </p>
+                      )}
+                    </div>
+
+                  </div>
                 </div>
 
               </motion.div>

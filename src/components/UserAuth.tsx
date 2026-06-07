@@ -5,6 +5,7 @@ import { Mail, Lock, User, Phone, Landmark, Binary, ChevronRight, Eye, EyeOff, S
 interface UserAuthProps {
   onAuthSuccess: (user: any) => void;
   referredByQueryParam: string | null;
+  appIconUrl?: string | null;
 }
 
 const NIGERIAN_BANKS = [
@@ -21,7 +22,7 @@ const NIGERIAN_BANKS = [
   'Sterling Bank'
 ];
 
-export default function UserAuth({ onAuthSuccess, referredByQueryParam }: UserAuthProps) {
+export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconUrl }: UserAuthProps) {
   const [activeMode, setActiveMode] = useState<'login' | 'signup'>('login');
   
   // Login fields
@@ -127,8 +128,12 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam }: UserAu
         <div className="p-6 md:p-8 space-y-6">
           {/* Main system header visual */}
           <div className="text-center space-y-2">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center text-3xl shadow-inner animate-pulse">
-              🐟
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center overflow-hidden shadow-inner font-bold">
+              {appIconUrl ? (
+                <img src={appIconUrl} alt="FishInvest Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <span className="text-3xl">🐟</span>
+              )}
             </div>
             <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent">
               FishInvest Security Console

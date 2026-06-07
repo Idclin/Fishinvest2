@@ -431,7 +431,7 @@ export const dbService = {
       return this.mapDocumentOut(collectionId, doc);
     } catch (err: any) {
       console.error(`Error updating document ${documentId} in ${collectionId}:`, err.message);
-      return this.mapDocumentOut(collectionId, store ? store[documentId] : data);
+      throw err;
     }
   },
 
@@ -451,7 +451,7 @@ export const dbService = {
       return true;
     } catch (err: any) {
       console.error(`Error deleting document ${documentId} in ${collectionId}:`, err.message);
-      return false;
+      throw err;
     }
   },
 

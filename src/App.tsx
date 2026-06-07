@@ -126,6 +126,25 @@ export default function App() {
   const clearNotificationLogs = () => setNotificationLog([]);
 
   const [marketCatalog, setMarketCatalog] = useState<any[]>([]);
+  const [appIconUrl, setAppIconUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/app-icon')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.url) {
+          setAppIconUrl(data.url);
+          let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+          if (!link) {
+            link = document.createElement('link');
+            link.rel = 'icon';
+            document.getElementsByTagName('head')[0].appendChild(link);
+          }
+          link.href = data.url;
+        }
+      })
+      .catch((err) => console.error('Error loading app icon:', err));
+  }, []);
 
   // Real-time synchronization of users, holdings, transactions, and catalogs via resilient restful polling
   const loadUserData = async () => {
@@ -313,6 +332,7 @@ export default function App() {
         
         <UserAuth 
           referredByQueryParam={referredByQuery} 
+          appIconUrl={appIconUrl}
           onAuthSuccess={(u: any) => {
             localStorage.setItem('fishinvest_user_id', u.telegram_id);
             setSimulatedId(u.telegram_id);
@@ -476,8 +496,12 @@ export default function App() {
                 className="flex items-center gap-3 cursor-pointer select-none"
                 title="Tap 5 times for security console access"
               >
-                <div className="w-10 h-10 rounded-xl bg-cyan-500 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(6,182,212,0.4)]">
-                  🐟
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 overflow-hidden flex items-center justify-center text-xl shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                  {appIconUrl ? (
+                    <img src={appIconUrl} alt="FishInvest" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    "🐟"
+                  )}
                 </div>
                 <div>
                   <h1 className="text-base font-extrabold text-white tracking-tight">FishInvest</h1>

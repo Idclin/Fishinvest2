@@ -1459,6 +1459,64 @@ app.get('/api/admin/transactions', async (req, res) => {
   }
 });
 
+// App Icon dynamic discovery API
+app.get('/api/app-icon', async (req, res) => {
+  try {
+    const txtPath = path.join(UPLOADS_DIR, 'active_icon_url.txt');
+    if (fs.existsSync(txtPath)) {
+      const url = await fs.promises.readFile(txtPath, 'utf8');
+      if (url && url.trim()) {
+        return res.json({ success: true, url: url.trim() });
+      }
+    }
+    const files = await fs.promises.readdir(UPLOADS_DIR);
+    const imgFiles = files.filter(f => f.startsWith('img_') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+    if (imgFiles.length > 0) {
+      // Sort by the numeric timestamp inside img_<timestamp>_<random>.<ext>
+      imgFiles.sort((a, b) => {
+        const t1 = parseInt(a.split('_')[1]) || 0;
+        const t2 = parseInt(b.split('_')[1]) || 0;
+        return t2 - t1; // Descending to get the latest first
+      });
+      return res.json({ success: true, url: `/uploads/${imgFiles[0]}` });
+    }
+    res.json({ success: true, url: null });
+  } catch (error: any) {
+    res.json({ success: true, url: null });
+  }
+});
+
+// Admin-facing endpoint to lock or change active app icon
+app.post('/api/admin/set-app-icon', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+    const txtPath = path.join(UPLOADS_DIR, 'active_icon_url.txt');
+    await fs.promises.writeFile(txtPath, url.trim(), 'utf8');
+    res.json({ success: true, url: url.trim() });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin-facing endpoint to list all historically uploaded images
+app.get('/api/admin/uploads', async (req, res) => {
+  try {
+    const files = await fs.promises.readdir(UPLOADS_DIR);
+    const imgFiles = files.filter(f => f.startsWith('img_') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+    imgFiles.sort((a, b) => {
+      const t1 = parseInt(a.split('_')[1]) || 0;
+      const t2 = parseInt(b.split('_')[1]) || 0;
+      return t2 - t1; // Descending to get latest first
+    });
+    res.json({ success: true, files: imgFiles.map(f => `/uploads/${f}`) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 8. Dynamic Market Manager APIS
 app.get('/api/market-fish', async (req, res) => {
   try {
