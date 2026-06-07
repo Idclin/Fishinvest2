@@ -42,6 +42,25 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showAuthBridge, setShowAuthBridge] = useState(false);
+
+  const parseAuthResponse = async (response: Response, errorFallback: string) => {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || errorFallback);
+      }
+      return data;
+    } else {
+      const text = await response.text();
+      if (text.includes('aistudio_auth') || text.includes('Authenticate in new window') || text.includes('blocking a required security cookie') || text.includes('aistudio_auth_flow')) {
+        setShowAuthBridge(true);
+        throw new Error('Google sandbox security verification required. Please click the orange/cyan unlock button below to authorize session cookies in a primary window, then swipe down to reload.');
+      }
+      throw new Error(`HTTP Error ${response.status}: ${response.statusText || 'Unknown Server Connection Issue'}`);
+    }
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,6 +70,7 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
     }
     setIsLoading(true);
     setErrorMsg('');
+    setShowAuthBridge(false);
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
@@ -60,10 +80,7 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
           password: loginPassword,
         }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Authentication failed');
-      }
+      const data = await parseAuthResponse(response, 'Authentication failed');
       onAuthSuccess(data.user);
     } catch (err: any) {
       setErrorMsg(err.message || 'Connection failed during authentication');
@@ -94,6 +111,7 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
 
     setIsLoading(true);
     setErrorMsg('');
+    setShowAuthBridge(false);
     try {
       const response = await fetch('/api/auth/signup', {
         method: 'POST',
@@ -108,10 +126,7 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
           referredBy: referredBy.trim() || null,
         }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Registration failed');
-      }
+      const data = await parseAuthResponse(response, 'Registration failed');
       onAuthSuccess(data.user);
     } catch (err: any) {
       setErrorMsg(err.message || 'Network error during registration');
@@ -224,6 +239,30 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
                 {errorMsg && (
                   <div className="bg-rose-500/10 border border-rose-500/20 text-xs text-rose-450 p-3 rounded-xl leading-normal">
                     ⚠️ {errorMsg}
+                  </div>
+                )}
+
+                {showAuthBridge && (
+                  <div className="bg-cyan-950/45 border border-cyan-500/40 text-xs p-4 rounded-xl leading-relaxed text-left space-y-3.5 shadow-[0_4px_25px_rgba(6,182,212,0.15)]">
+                    <div className="flex items-center gap-1.5 font-bold text-cyan-400">
+                      <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
+                      <span>Security Sandbox Authorization Bridge</span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-normal font-sans">
+                      Your browser or Telegram client has blocked secure cross-site database connections. Click the button below to authorize cookies in a native window, then return to Telegram.
+                    </p>
+                    <a
+                      href={window.location.protocol + "//" + window.location.host + "/"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex w-full py-2.5 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-350 hover:to-blue-400 text-slate-950 font-sans font-black rounded-xl text-[11px] items-center justify-center gap-1.5 transition-all text-center no-underline cursor-pointer shadow-md"
+                    >
+                      <span>🔒 Unlock Sandbox Session</span>
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                    </a>
+                    <p className="text-[10px] text-slate-400 text-center italic leading-normal font-sans">
+                      Once opened (which registers the active secure session cookies), swipe down on Telegram to refresh this screen!
+                    </p>
                   </div>
                 )}
 
@@ -375,6 +414,30 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
                 {errorMsg && (
                   <div className="bg-rose-500/10 border border-rose-500/20 text-xs text-rose-450 p-3 rounded-xl leading-normal">
                     ⚠️ {errorMsg}
+                  </div>
+                )}
+
+                {showAuthBridge && (
+                  <div className="bg-cyan-950/45 border border-cyan-500/40 text-xs p-4 rounded-xl leading-relaxed text-left space-y-3.5 shadow-[0_4px_25px_rgba(6,182,212,0.15)]">
+                    <div className="flex items-center gap-1.5 font-bold text-cyan-400">
+                      <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
+                      <span>Security Sandbox Authorization Bridge</span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-normal font-sans">
+                      Your browser or Telegram client has blocked secure cross-site database connections. Click the button below to authorize cookies in a native window, then return to Telegram.
+                    </p>
+                    <a
+                      href={window.location.protocol + "//" + window.location.host + "/"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex w-full py-2.5 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-350 hover:to-blue-400 text-slate-950 font-sans font-black rounded-xl text-[11px] items-center justify-center gap-1.5 transition-all text-center no-underline cursor-pointer shadow-md"
+                    >
+                      <span>🔒 Unlock Sandbox Session</span>
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                    </a>
+                    <p className="text-[10px] text-slate-400 text-center italic leading-normal font-sans">
+                      Once opened (which registers the active secure session cookies), swipe down on Telegram to refresh this screen!
+                    </p>
                   </div>
                 )}
 
