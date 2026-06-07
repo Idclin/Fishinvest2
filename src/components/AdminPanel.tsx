@@ -104,6 +104,7 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
 
   // App-wide Logo / Icon Configuration States
   const [adminAppIconUrl, setAdminAppIconUrl] = React.useState<string | null>(null);
+  const [adminAppUrl, setAdminAppUrl] = React.useState<string | null>(null);
   const [pastUploads, setPastUploads] = React.useState<string[]>([]);
   const [isUpdatingBrandIcon, setIsUpdatingBrandIcon] = React.useState(false);
   const [brandFeedback, setBrandFeedback] = React.useState('');
@@ -213,6 +214,16 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
           }
         })
         .catch(err => console.error('Error loading brand icon in admin:', err));
+
+      // Load current Telegram WebApp URL Configuration
+      fetch('/api/app-url')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.url) {
+            setAdminAppUrl(data.url);
+          }
+        })
+        .catch(err => console.error('Error loading brand WebApp URL in admin:', err));
 
       // Load all past uploads
       fetch('/api/admin/uploads')
@@ -1936,6 +1947,55 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                             className="bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-sans font-black text-[10px] px-4 py-2 rounded-xl uppercase tracking-wider block border-none cursor-pointer"
                           >
                             Set URL
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Telegram Mini-App URL Configuration */}
+                      <div className="space-y-1.5 pt-4 border-t border-cyan-950/20">
+                        <label className="text-[10px] text-cyan-400 font-bold block uppercase tracking-wider">Telegram WebApp Launch URL</label>
+                        <p className="text-[9px] text-slate-400 leading-normal">Specify your active Netlify or preview domain. The Telegram interactive bot uses this URL to automatically construct launch paths inside user chats.</p>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="https://fishinvest.netlify.app" 
+                            value={adminAppUrl || ''}
+                            onChange={(e) => setAdminAppUrl(e.target.value)}
+                            className="flex-1 bg-brand-bg border border-cyan-900/40 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-sans"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const urlVal = adminAppUrl?.trim();
+                              if (!urlVal) {
+                                alert('Please input your active domain URL first.');
+                                return;
+                              }
+                              try {
+                                setIsUpdatingBrandIcon(true);
+                                setBrandFeedback('Updating WebApp target URL...');
+                                const res = await fetch('/api/admin/set-app-url', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ url: urlVal })
+                                });
+                                const data = await res.json();
+                                if (data.success && data.url) {
+                                  setAdminAppUrl(data.url);
+                                  setBrandFeedback('✅ WebApp URL updated successfully!');
+                                  setTimeout(() => setBrandFeedback(''), 4000);
+                                } else {
+                                  throw new Error(data.error || 'Server rejected URL');
+                                }
+                              } catch (err: any) {
+                                alert(err.message || 'Error occurred');
+                              } finally {
+                                setIsUpdatingBrandIcon(false);
+                              }
+                            }}
+                            className="bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-sans font-black text-[10px] px-4 py-2 rounded-xl uppercase tracking-wider block border-none cursor-pointer"
+                          >
+                            Lock URL
                           </button>
                         </div>
                       </div>

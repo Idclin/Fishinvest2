@@ -119,6 +119,59 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    // If inside Telegram WebApp, execute seamless dynamic authenticated logins
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg) {
+      try {
+        tg.ready();
+        tg.expand();
+        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+          const tgUser = tg.initDataUnsafe.user;
+          const tgUserId = String(tgUser.id);
+          const firstName = tgUser.first_name || '';
+          const lastName = tgUser.last_name || '';
+          const username = tgUser.username || '';
+          const startParam = tg.initDataUnsafe.start_param || '';
+
+          addNotification("📱 Telegram WebApp detected. Initializing secure console...");
+
+          fetch('/api/auth/telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              telegramId: tgUserId,
+              firstName,
+              lastName,
+              username,
+              referredBy: startParam || referredByQuery
+            })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.user) {
+              localStorage.setItem('fishinvest_user_id', data.user.telegram_id);
+              setSimulatedId(data.user.telegram_id);
+              setUser(data.user);
+              if (data.isAdmin || data.user.telegram_id === '8655517474' || data.user.telegram_id === '6395906533' || data.user.email === 'idehenclintonn@gmail.com' || (data.user.email && data.user.email.toLowerCase().includes('onefootball76'))) {
+                localStorage.setItem('fishinvest_admin_unlocked', 'true');
+                setIsAdminUnlocked(true);
+                setShowAdminPanel(true);
+              }
+              addNotification(`🛡️ Authorized as Telegram User: ${data.user.name}`);
+            }
+          })
+          .catch(err => {
+            console.error('Error conducting Telegram WebApp auto-login:', err);
+            addNotification('⚠️ Dynamic verification failed. Active input permitted.');
+          });
+        }
+      } catch (tgErr) {
+        console.error('Error initializing Telegram WebApp SDK:', tgErr);
+      }
+    }
+  }, [referredByQuery]);
+
   const addNotification = (msg: string) => {
     setNotificationLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   };
@@ -337,7 +390,7 @@ export default function App() {
             localStorage.setItem('fishinvest_user_id', u.telegram_id);
             setSimulatedId(u.telegram_id);
             setUser(u);
-            if (u.telegram_id === 'admin_owner' || u.email === 'idehenclintonn@gmail.com') {
+            if (u.telegram_id === 'admin_owner' || u.telegram_id === '6395906533' || u.email === 'idehenclintonn@gmail.com' || (u.email && u.email.toLowerCase().includes('onefootball76'))) {
               localStorage.setItem('fishinvest_admin_unlocked', 'true');
               setIsAdminUnlocked(true);
               setShowAdminPanel(true);
