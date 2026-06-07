@@ -617,7 +617,7 @@ app.post('/api/admin/login', async (req, res) => {
     return res.status(400).json({ error: 'Email and password are required' });
   }
   try {
-    if (email.trim() === 'idehenclintonn@gmail.com' && password === 'password123') {
+    if (email.trim() === 'idehenclintonn@gmail.com' && password === 'moonlight17') {
       return res.json({
         success: true,
         admin: {

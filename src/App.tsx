@@ -41,8 +41,77 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
+  // Administrative Hidden Gate States
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
+    return localStorage.getItem('fishinvest_admin_unlocked') === 'true';
+  });
+  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState('');
+  const [isAdminSubmitting, setIsAdminSubmitting] = useState(false);
+  const [headerClickCount, setHeaderClickCount] = useState(0);
+
   // Parse deep-link referral URL query parameter if present
   const [referredByQuery, setReferredByQuery] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Hidden keystroke shortcut: Alt+Shift+A or Ctrl+Shift+A to reveal credential check
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.altKey && e.shiftKey && e.key.toLowerCase() === 'a') || 
+          (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a')) {
+        e.preventDefault();
+        setShowAdminLoginModal(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (headerClickCount === 0) return;
+    const timer = setTimeout(() => setHeaderClickCount(0), 3000);
+    return () => clearTimeout(timer);
+  }, [headerClickCount]);
+
+  const handleLogoClick = () => {
+    setHeaderClickCount((prev) => {
+      const next = prev + 1;
+      if (next >= 5) {
+        setShowAdminLoginModal(true);
+        addNotification("🔒 Operator system credentials requested");
+        return 0;
+      }
+      return next;
+    });
+  };
+
+  const handleAdminVerifySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAdminSubmitting(true);
+    setAdminLoginError('');
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Identity verification failed');
+      }
+      localStorage.setItem('fishinvest_admin_unlocked', 'true');
+      setIsAdminUnlocked(true);
+      setShowAdminLoginModal(false);
+      setShowAdminPanel(true);
+      setAdminEmail('');
+      setAdminPassword('');
+    } catch (err: any) {
+      setAdminLoginError(err.message);
+    } finally {
+      setIsAdminSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -61,24 +130,34 @@ export default function App() {
 
   const [marketCatalog, setMarketCatalog] = useState<any[]>([]);
 
-  // Real-time synchronization of users, holdings, transactions, and catalogs via restful polling
+  // Real-time synchronization of users, holdings, transactions, and catalogs via resilient restful polling
   const loadUserData = async () => {
     if (!simulatedId) return;
 
+    const fetchJson = async (url: string) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          return null; // Ignore HTML or non-JSON fallback pages
+        }
+        return await res.json();
+      } catch (err) {
+        return null;
+      }
+    };
+
     try {
       // 1. Fetch user profile data
-      const userRes = await fetch(`/api/users/${simulatedId}`);
-      if (userRes.ok) {
-        const uData = await userRes.json();
+      const uData = await fetchJson(`/api/users/${simulatedId}`);
+      if (uData) {
         setUser(uData);
-      } else {
-        setUser(null);
       }
 
       // 2. Fetch active holdings pond and transaction history mapping
-      const syncRes = await fetch(`/api/users/${simulatedId}/sync`);
-      if (syncRes.ok) {
-        const syncData = await syncRes.json();
+      const syncData = await fetchJson(`/api/users/${simulatedId}/sync`);
+      if (syncData) {
         setHoldings(syncData.holdings || []);
         setTransactions(syncData.transactions || []);
 
@@ -87,16 +166,14 @@ export default function App() {
       }
 
       // 3. Fetch dynamic market catalog
-      const catRes = await fetch('/api/market-fish');
-      if (catRes.ok) {
-        const catData = await catRes.json();
+      const catData = await fetchJson('/api/market-fish');
+      if (catData) {
         setMarketCatalog(catData.fish || []);
       }
 
       // 4. Fetch leaderboard rankings
-      const leaderRes = await fetch('/api/leaderboard');
-      if (leaderRes.ok) {
-        const leaderData = await leaderRes.json();
+      const leaderData = await fetchJson('/api/leaderboard');
+      if (leaderData) {
         setLeaderboard(leaderData);
       }
     } catch (err) {
@@ -219,7 +296,13 @@ export default function App() {
           </div>
           
           <button
-            onClick={() => setShowAdminPanel(true)}
+            onClick={() => {
+              if (isAdminUnlocked) {
+                setShowAdminPanel(true);
+              } else {
+                setShowAdminLoginModal(true);
+              }
+            }}
             className="px-5 py-2.5 bg-brand-box border border-cyan-500/30 text-cyan-400 rounded-xl hover:bg-cyan-500/10 active:scale-95 transition-transform text-xs cursor-pointer font-bold"
           >
             🔑 Log into Admin Panel
@@ -233,16 +316,96 @@ export default function App() {
         <div className="absolute bottom-20 right-5 w-64 h-64 rounded-full bg-blue-500/10 blur-3xl" />
       </div>
 
-      {/* Low-profile Admin Console operators key shortcut */}
-      <div className="absolute top-4 right-4 z-50">
-        <button
-          onClick={() => setShowAdminPanel(true)}
-          className="bg-brand-box/95 p-2 rounded-xl border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/15 active:scale-95 transition-all text-[11px] font-bold font-sans cursor-pointer flex items-center gap-1 shadow-lg shadow-cyan-500/5"
-          title="Open Admin System Panel"
-        >
-          <span>🔑 Admin System</span>
-        </button>
-      </div>
+      {/* Hidden Admin Console operators shortcut - Only visible once credentials verified */}
+      {isAdminUnlocked && (
+        <div className="absolute top-4 right-4 z-50">
+          <button
+            onClick={() => setShowAdminPanel(true)}
+            className="bg-brand-box/95 p-2 rounded-xl border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/15 active:scale-95 transition-all text-[11px] font-bold font-sans cursor-pointer flex items-center gap-1 shadow-lg shadow-cyan-500/5 animate-bounce"
+            title="Open Admin System Panel"
+          >
+            <span>🔑 Admin System</span>
+          </button>
+        </div>
+      )}
+
+      {/* Secret Admin Credentials Verification Modal */}
+      <AnimatePresence>
+        {showAdminLoginModal && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-55 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-brand-box border border-cyan-500/30 max-w-xs w-full rounded-2xl p-5 shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-400 to-blue-500" />
+              
+              <div className="text-center space-y-1 my-3">
+                <div className="w-10 h-10 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl flex items-center justify-center mx-auto text-lg shadow-inner">
+                  🔑
+                </div>
+                <h3 className="text-sm font-black text-white tracking-tight pt-1">Authorized Access Lock</h3>
+                <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
+                  Provide authorized administrator operator credentials to unlock system access buttons.
+                </p>
+              </div>
+
+              <form onSubmit={handleAdminVerifySubmit} className="space-y-3 pt-2">
+                <div className="space-y-0.5">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">ID/Email</label>
+                  <input 
+                    type="email"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    required
+                    placeholder="E.g., name@domain.com"
+                    className="w-full bg-brand-bg border border-cyan-900/40 rounded-lg px-3 py-2 text-[11px] text-white focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-0.5">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Security Key</label>
+                  <input 
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    required
+                    placeholder="••••••••"
+                    className="w-full bg-brand-bg border border-cyan-900/40 rounded-lg px-3 py-2 text-[11px] text-white focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                </div>
+
+                {adminLoginError && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 text-[10px] text-rose-400 rounded-lg p-2.5 leading-snug">
+                    {adminLoginError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminLoginModal(false);
+                      setAdminLoginError('');
+                    }}
+                    className="py-2 bg-brand-bg hover:bg-slate-900 text-slate-400 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isAdminSubmitting}
+                    className="py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-lg font-black text-[10px] active:scale-95 transition-all text-center cursor-pointer"
+                  >
+                    {isAdminSubmitting ? 'Verifying...' : 'Unlock Console'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {loading && !user ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-3">
@@ -255,7 +418,11 @@ export default function App() {
           {/* Header Dashboard section (only shown if onboarded) */}
           {user && user.name && (
             <header className="flex items-center justify-between mb-6 p-4 bg-brand-box/80 backdrop-blur-md border border-cyan-900/40 rounded-2xl shadow-[0_0_15px_rgba(56,189,248,0.1)] font-sans">
-              <div className="flex items-center gap-3">
+              <div 
+                onClick={handleLogoClick}
+                className="flex items-center gap-3 cursor-pointer select-none"
+                title="Tap 5 times for security console access"
+              >
                 <div className="w-10 h-10 rounded-xl bg-cyan-500 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(6,182,212,0.4)]">
                   🐟
                 </div>

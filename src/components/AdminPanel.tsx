@@ -39,8 +39,8 @@ interface AdminPanelProps {
 export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
   // Authentication State
   const [isAdminLoggedIn, setIsAdminLoggedIn] = React.useState(false);
-  const [email, setEmail] = React.useState('idehenclintonn@gmail.com');
-  const [password, setPassword] = React.useState('password123'); // Default seeded password
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState(''); // Requires manual credentials entry
   const [isLoggingIn, setIsLoggingIn] = React.useState(false);
   const [loginError, setLoginError] = React.useState('');
 

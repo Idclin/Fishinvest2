@@ -184,22 +184,44 @@ export async function initializeDatabaseSchema() {
       await dbs.create(databaseId, 'FishInvest Production DB');
     }
 
-    // 2. Build 9 collections & attributes
+    // Index mappings required for active filter collections
+    const INDEX_CONFIG: Record<string, Array<{ key: string; type: 'key' | 'unique' | 'fulltext'; attributes: string[] }>> = {
+      [FISH_HOLDINGS]: [
+        { key: 'user_id', type: 'key', attributes: ['user_id'] }
+      ],
+      [TRANSACTIONS]: [
+        { key: 'user_id', type: 'key', attributes: ['user_id'] },
+        { key: 'type', type: 'key', attributes: ['type'] }
+      ],
+      [WITHDRAWALS]: [
+        { key: 'status', type: 'key', attributes: ['status'] }
+      ]
+    };
+
+    // 2. Build/Repair all 9 collections, their attributes, and indices
     for (const collectionId of Object.keys(SCHEMA_CONFIG)) {
+      let col: any = null;
       try {
-        await dbs.getCollection(databaseId, collectionId);
+        col = await dbs.getCollection(databaseId, collectionId);
         console.log(`✅ [Appwrite DB] Located collection: "${collectionId}"`);
       } catch (colErr) {
         console.log(`🔄 [Appwrite DB] Creating missing collection: "${collectionId}"...`);
-        await dbs.createCollection(databaseId, collectionId, collectionId);
+        col = await dbs.createCollection(databaseId, collectionId, collectionId);
         
         // Wait briefly between Appwrite operations to allow internal worker indices to align
         await new Promise((r) => setTimeout(r, 1000));
-        
-        // Create attributes
-        const attributes = SCHEMA_CONFIG[collectionId];
-        for (const attr of attributes) {
+      }
+
+      // Check existing attributes list
+      const existingAttributes = col ? (col.attributes || []) : [];
+      const existingKeys = new Set(existingAttributes.map((a: any) => a.key));
+
+      // Append any missing attribute schemas in real-time
+      const attributes = SCHEMA_CONFIG[collectionId];
+      for (const attr of attributes) {
+        if (!existingKeys.has(attr.key)) {
           try {
+            console.log(`🔄 [Appwrite DB] Creating missing attribute: ${collectionId}.${attr.key}...`);
             if (attr.type === 'string') {
               await dbs.createStringAttribute(databaseId, collectionId, attr.key, attr.size || 255, attr.required ?? false, attr.default);
             } else if (attr.type === 'float') {
@@ -209,14 +231,43 @@ export async function initializeDatabaseSchema() {
             } else if (attr.type === 'boolean') {
               await dbs.createBooleanAttribute(databaseId, collectionId, attr.key, attr.required ?? false, attr.default);
             }
-            console.log(`   Attribute created: ${collectionId}.${attr.key}`);
+            console.log(`   ✅ Attribute created successfully: ${collectionId}.${attr.key}`);
+            await new Promise((r) => setTimeout(r, 200));
           } catch (attrErr: any) {
-            console.warn(`   ⚠️ Problem creating attribute ${collectionId}.${attr.key}: ${attrErr.message}`);
+            if (attrErr.message?.includes('already exists') || attrErr.code === 409) {
+              // Attribute exists but was not fully loaded in attributes array yet
+            } else {
+              console.warn(`   ⚠️ Problem creating attribute ${collectionId}.${attr.key}: ${attrErr.message}`);
+            }
+          }
+        }
+      }
+
+      // Append any missing query filter index maps
+      const indexList = INDEX_CONFIG[collectionId];
+      if (indexList) {
+        const existingIndexes = col ? (col.indexes || []) : [];
+        const existingIndexKeys = new Set(existingIndexes.map((i: any) => i.key));
+
+        for (const idx of indexList) {
+          if (!existingIndexKeys.has(idx.key)) {
+            try {
+              console.log(`🔄 [Appwrite DB] Creating missing index: ${collectionId}.${idx.key}...`);
+              await dbs.createIndex(databaseId, collectionId, idx.key, idx.type as any, idx.attributes);
+              console.log(`   ✅ Index created successfully: ${collectionId}.${idx.key}`);
+              await new Promise((r) => setTimeout(r, 200));
+            } catch (idxErr: any) {
+              if (idxErr.message?.includes('already exists') || idxErr.code === 409) {
+                // Index exists, safe to ignore
+              } else {
+                console.warn(`   ⚠️ Problem creating index ${collectionId}.${idx.key}: ${idxErr.message}`);
+              }
+            }
           }
         }
       }
     }
-    console.log('🎉 [Appwrite DB] All 9 collections schema verified successfully.');
+    console.log('🎉 [Appwrite DB] All 9 collections schema and indices verified successfully.');
   } catch (error: any) {
     console.error('❌ [Appwrite DB] Schema initialization completed with error:', error.message);
   }
