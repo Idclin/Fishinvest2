@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { User, FishHolding, FISH_SPECS, FishType } from '../types.ts';
-import { formatNaira, getProRatedEarnings, getActiveDays } from '../utils.ts';
+import { formatNaira, getProRatedEarnings, getActiveDays, getApiUrl } from '../utils.ts';
 import AnimatedPond from './AnimatedPond.tsx';
 import { Trophy, HelpCircle, AlertCircle, ArrowUpRight } from 'lucide-react';
 
@@ -68,7 +68,7 @@ export default function TabPond({
     setFeedError('');
     try {
       const todayDate = new Date().toISOString().slice(0, 10);
-      const response = await fetch(`/api/users/${user.telegram_id}/check-in`, {
+      const response = await fetch(getApiUrl(`/api/users/${user.telegram_id}/check-in`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ todayDate }),

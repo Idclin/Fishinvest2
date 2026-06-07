@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FISH_SPECS, User } from '../types.ts';
 import { UserCheck, Phone, Landmark, Binary, Compass, ChevronRight, HelpCircle } from 'lucide-react';
+import { getApiUrl } from '../utils.ts';
 
 interface OnboardingFlowProps {
   telegramId: string;
@@ -69,7 +70,7 @@ export default function OnboardingFlow({
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const response = await fetch(`/api/users/${telegramId}/onboard`, {
+      const response = await fetch(getApiUrl(`/api/users/${telegramId}/onboard`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Transaction } from '../types.ts';
-import { formatNaira } from '../utils.ts';
+import { formatNaira, getApiUrl } from '../utils.ts';
 import { CreditCard, Copy, Check, ChevronRight, Activity, Zap, Loader2 } from 'lucide-react';
 
 interface TabDepositProps {
@@ -27,7 +27,7 @@ export default function TabDeposit({
 
   React.useEffect(() => {
     // Load configured public key from the backend setup
-    fetch('/api/flutterwave/config')
+    fetch(getApiUrl('/api/flutterwave/config'))
       .then(res => res.json())
       .then(data => {
         if (data.success && data.publicKey) {
@@ -53,7 +53,7 @@ export default function TabDeposit({
       alert('⚠️ Flutterwave SDK has not completed loading. Standard security fallback active.');
       
       // Sandbox fallback auto-credit so users have an excellent checkout simulation right inside the frame
-      fetch(`/api/users/${user.telegram_id}/deposit`, {
+      fetch(getApiUrl(`/api/users/${user.telegram_id}/deposit`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: amountVal })
@@ -94,7 +94,7 @@ export default function TabDeposit({
           addNotification('💸 Flutterwave payment completed. Conducting safe validation audit...');
           
           try {
-            const verifyRes = await fetch('/api/flutterwave/verify', {
+            const verifyRes = await fetch(getApiUrl('/api/flutterwave/verify'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -146,7 +146,7 @@ export default function TabDeposit({
   const handleQuickDeposit = async (amount: number) => {
     setIsFunding(amount);
     try {
-      const response = await fetch(`/api/users/${user.telegram_id}/deposit`, {
+      const response = await fetch(getApiUrl(`/api/users/${user.telegram_id}/deposit`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount }),

@@ -90,3 +90,54 @@ export function formatNaira(amount: number, showDecimals: boolean = false): stri
   // Clean up currency output to be simple
   return formatter.format(amount).replace('NGN', '₦').replace('¤', '₦').trim();
 }
+
+/**
+ * Resolves the absolute backend API URL.
+ * Supports running the static frontend on Netlify or GitHub Pages while contacting the live Cloud Run backend.
+ */
+export function getApiUrl(path: string): string {
+  // Ensure we format the path to start with /
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+  // Automatically remember active backend origin if the app is loaded from there
+  const host = window.location.hostname;
+  const isBackendHost = 
+    host.includes('run.app') || 
+    host.includes('web-preview.aistudio') || 
+    host.includes('europe-west2.run.app');
+
+  if (isBackendHost) {
+    try {
+      localStorage.setItem('fishinvest_last_backend_url', window.location.origin);
+    } catch (e) {
+      // Ignore storage block errors
+    }
+    return cleanPath;
+  }
+
+  // 1. Explicit user override
+  try {
+    const override = localStorage.getItem('fishinvest_backend_url');
+    if (override) {
+      const cleanOverride = override.trim().replace(/\/$/, '');
+      return `${cleanOverride}${cleanPath}`;
+    }
+  } catch (e) {}
+
+  // 2. Relative if localhost
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return cleanPath;
+  }
+
+  // 3. Stored auto-discovered backend URL from previous preview session
+  try {
+    const lastKnown = localStorage.getItem('fishinvest_last_backend_url');
+    if (lastKnown) {
+      return `${lastKnown.replace(/\/$/, '')}${cleanPath}`;
+    }
+  } catch (e) {}
+
+  // 4. Fallback to active applet shared Cloud Run deployment
+  const defaultBackend = 'https://ais-pre-wxa7usscgspomn6irqvlhe-245051637466.europe-west2.run.app';
+  return `${defaultBackend}${cleanPath}`;
+}

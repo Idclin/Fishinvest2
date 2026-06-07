@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, FishHolding, Transaction, FISH_SPECS } from './types.ts';
-import { formatNaira } from './utils.ts';
+import { formatNaira, getApiUrl } from './utils.ts';
 
 // Dynamic Sub-components
 import OnboardingFlow from './components/OnboardingFlow.tsx';
@@ -88,7 +88,7 @@ export default function App() {
     setIsAdminSubmitting(true);
     setAdminLoginError('');
     try {
-      const res = await fetch('/api/admin/login', {
+      const res = await fetch(getApiUrl('/api/admin/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: adminEmail, password: adminPassword }),
@@ -136,7 +136,7 @@ export default function App() {
 
           addNotification("📱 Telegram WebApp detected. Initializing secure console...");
 
-          fetch('/api/auth/telegram', {
+          fetch(getApiUrl('/api/auth/telegram'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -182,7 +182,7 @@ export default function App() {
   const [appIconUrl, setAppIconUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/app-icon')
+    fetch(getApiUrl('/api/app-icon'))
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.url) {
@@ -205,7 +205,7 @@ export default function App() {
 
     const fetchJson = async (url: string) => {
       try {
-        const res = await fetch(url);
+        const res = await fetch(getApiUrl(url));
         if (!res.ok) return null;
         const contentType = res.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {

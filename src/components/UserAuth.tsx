@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, User, Phone, Landmark, Binary, ChevronRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { getApiUrl } from '../utils.ts';
 
 interface UserAuthProps {
   onAuthSuccess: (user: any) => void;
@@ -43,6 +44,33 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [showAuthBridge, setShowAuthBridge] = useState(false);
+  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [backendUrlInput, setBackendUrlInput] = useState(() => {
+    try {
+      return localStorage.getItem('fishinvest_backend_url') || '';
+    } catch (e) {
+      return '';
+    }
+  });
+
+  const handleSaveBackendUrl = () => {
+    if (!backendUrlInput.trim()) {
+      try {
+        localStorage.removeItem('fishinvest_backend_url');
+      } catch (e) {}
+      alert('ℹ️ Connection reset to default dynamic discovery.');
+    } else {
+      let cleanUrl = backendUrlInput.trim().replace(/\/$/, '');
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = 'https://' + cleanUrl;
+        setBackendUrlInput(cleanUrl);
+      }
+      try {
+        localStorage.setItem('fishinvest_backend_url', cleanUrl);
+      } catch (e) {}
+      alert(`✅ Custom backend API endpoint saved:\n${cleanUrl}`);
+    }
+  };
 
   const parseAuthResponse = async (response: Response, errorFallback: string) => {
     const contentType = response.headers.get('content-type') || '';
@@ -72,7 +100,7 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
     setErrorMsg('');
     setShowAuthBridge(false);
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -113,7 +141,7 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
     setErrorMsg('');
     setShowAuthBridge(false);
     try {
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch(getApiUrl('/api/auth/signup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -459,9 +487,43 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
             )}
           </AnimatePresence>
 
-          <div className="flex items-center gap-2 justify-center text-[10px] text-slate-500 font-mono">
-            <ShieldCheck className="w-3.5 h-3.5 text-cyan-500" />
-            <span>Encrypted Appwrite Integration Synced</span>
+          <div className="flex flex-col items-center gap-2 pt-2 border-t border-cyan-500/10 w-full mt-3">
+            <div className="flex items-center gap-2 justify-center text-[10px] text-slate-500 font-mono">
+              <ShieldCheck className="w-3.5 h-3.5 text-cyan-500" />
+              <span>Encrypted Appwrite Integration Synced</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowServerConfig(!showServerConfig)}
+              className="text-[10px] text-cyan-500/65 hover:text-cyan-400 font-mono flex items-center gap-1 cursor-pointer transition-colors pt-1 border-none bg-none outline-none"
+            >
+              🛠️ {showServerConfig ? 'Hide' : 'Configure'} API Backend Endpoint
+            </button>
+
+            {showServerConfig && (
+              <div className="w-full bg-slate-950/70 p-3 rounded-xl border border-cyan-500/15 space-y-2 mt-1.5 text-left">
+                <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
+                  If running on custom static hosts (such as Netlify or GitHub Pages), specify your active Cloud Run or Express Backend deployment URL here. Leaving it blank uses secure dynamic auto-discovery.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={backendUrlInput}
+                    onChange={(e) => setBackendUrlInput(e.target.value)}
+                    placeholder="https://your-backend-app.run.app"
+                    className="flex-1 bg-brand-bg border border-cyan-550/20 rounded-lg px-2.5 py-1.5 text-[11px] font-mono focus:outline-none focus:border-cyan-500 text-slate-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveBackendUrl}
+                    className="bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-sans font-black text-[10px] uppercase tracking-wider px-3.5 py-1.5 rounded-lg transition-all cursor-pointer border-none"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -30,7 +30,14 @@ import {
   Percent,
   RefreshCw
 } from 'lucide-react';
-import { formatNaira } from '../utils.ts';
+import { formatNaira, getApiUrl } from '../utils.ts';
+
+const fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  if (typeof input === 'string' && input.startsWith('/')) {
+    return window.fetch(getApiUrl(input), init);
+  }
+  return window.fetch(input, init);
+};
 
 interface AdminPanelProps {
   onBackToApp: () => void;

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Transaction, FISH_SPECS } from '../types.ts';
-import { formatNaira, getProRatedEarnings } from '../utils.ts';
+import { formatNaira, getProRatedEarnings, getApiUrl } from '../utils.ts';
 import { Lock, Landmark, CheckCircle, Clock, Check, Loader2, ArrowDownRight } from 'lucide-react';
 
 interface TabWithdrawProps {
@@ -86,7 +86,7 @@ export default function TabWithdraw({
     setIsSubmitting(true);
     setErrorMsg('');
     try {
-      const response = await fetch(`/api/users/${user.telegram_id}/withdraw`, {
+      const response = await fetch(getApiUrl(`/api/users/${user.telegram_id}/withdraw`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentDay: simulatedDay }),

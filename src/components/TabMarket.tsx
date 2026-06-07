@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FISH_SPECS, FishType } from '../types.ts';
-import { formatNaira } from '../utils.ts';
+import { formatNaira, getApiUrl } from '../utils.ts';
 import { ShoppingBag, ChevronRight, Calculator, Check, AlertCircle } from 'lucide-react';
 
 interface TabMarketProps {
@@ -70,7 +70,7 @@ export default function TabMarket({
     setIsSubmitting(true);
     setErrorMsg('');
     try {
-      const response = await fetch(`/api/users/${telegramId}/buy`, {
+      const response = await fetch(getApiUrl(`/api/users/${telegramId}/buy`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
