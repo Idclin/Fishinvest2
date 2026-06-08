@@ -117,7 +117,7 @@ export default function TabRanks({ currentUser, leaderboard }: TabRanksProps) {
 
             return (
               <div
-                key={item.id}
+                key={`${item.id || 'rank'}-${idx}`}
                 className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${
                   isSelf
                     ? 'bg-cyan-500/10 border-cyan-400/40 relative font-bold'

@@ -983,11 +983,46 @@ app.get('/api/admin/users', async (req, res) => {
   }
 });
 
+async function findUserByIdentifier(identifier: string): Promise<any | null> {
+  if (!identifier) return null;
+  const cleanId = String(identifier).trim();
+  
+  // 1. Try directly fetching by documentId
+  try {
+    const user = await dbService.getDocument(USERS, cleanId);
+    if (user) return user;
+  } catch (e) {
+    // Ignore direct fetch failure
+  }
+
+  // 2. Try listing documents to match more fields
+  try {
+    const allUsers = await dbService.listDocuments(USERS);
+    const match = allUsers.find(u => 
+      String(u.id || '').trim() === cleanId ||
+      String(u.$id || '').trim() === cleanId ||
+      String(u.telegram_id || '').trim() === cleanId ||
+      String(u.telegramId || '').trim() === cleanId ||
+      String(u.email || '').trim().toLowerCase() === cleanId.toLowerCase()
+    );
+    if (match) return match;
+  } catch (e) {
+    console.error('Error in findUserByIdentifier list fallback:', e);
+  }
+
+  return null;
+}
+
 app.post('/api/admin/users/:telegramId/status', async (req, res) => {
   try {
     const { telegramId } = req.params;
     const { status } = req.body;
-    await dbService.updateDocument(USERS, telegramId, {
+    const userData = await findUserByIdentifier(telegramId);
+    if (!userData) {
+      return res.status(404).json({ error: 'User does not exist.' });
+    }
+    const resolvedId = userData.id || userData.$id || userData.telegram_id || telegramId;
+    await dbService.updateDocument(USERS, resolvedId, {
       status: status || 'Active'
     });
     res.json({ success: true, message: `User account changed to ${status || 'Active'}` });
@@ -1000,7 +1035,12 @@ app.put('/api/admin/users/:telegramId/edit', async (req, res) => {
   try {
     const { telegramId } = req.params;
     const { name, phone, bankName, accountNumber } = req.body;
-    await dbService.updateDocument(USERS, telegramId, {
+    const userData = await findUserByIdentifier(telegramId);
+    if (!userData) {
+      return res.status(404).json({ error: 'User does not exist.' });
+    }
+    const resolvedId = userData.id || userData.$id || userData.telegram_id || telegramId;
+    await dbService.updateDocument(USERS, resolvedId, {
       name,
       phone,
       bank_name: bankName,
@@ -1021,19 +1061,20 @@ app.post('/api/admin/users/:telegramId/credit', async (req, res) => {
       return res.status(400).json({ error: 'Valid positive adjustment amount is required.' });
     }
 
-    const userData = await dbService.getDocument(USERS, telegramId);
+    const userData = await findUserByIdentifier(telegramId);
     if (!userData) {
       return res.status(404).json({ error: 'User does not exist.' });
     }
 
+    const resolvedId = userData.id || userData.$id || userData.telegram_id || telegramId;
     const bal = userData.wallet_balance || 0;
-    await dbService.updateDocument(USERS, telegramId, {
+    await dbService.updateDocument(USERS, resolvedId, {
       wallet_balance: bal + val
     });
 
     const txId = 'tx_man_crd_' + Math.floor(Math.random() * 1000000).toString();
     await dbService.createDocument(TRANSACTIONS, txId, {
-      user_id: telegramId,
+      user_id: resolvedId,
       type: 'deposit',
       amount: val,
       balance_before: bal,
@@ -1058,22 +1099,23 @@ app.post('/api/admin/users/:telegramId/debit', async (req, res) => {
       return res.status(400).json({ error: 'Valid positive adjustment amount is required.' });
     }
 
-    const userData = await dbService.getDocument(USERS, telegramId);
+    const userData = await findUserByIdentifier(telegramId);
     if (!userData) {
       return res.status(404).json({ error: 'User does not exist.' });
     }
+    const resolvedId = userData.id || userData.$id || userData.telegram_id || telegramId;
     const bal = userData.wallet_balance || 0;
     if (bal < val) {
       return res.status(400).json({ error: `User balance ₦${bal} is too low to debit ₦${val}!` });
     }
 
-    await dbService.updateDocument(USERS, telegramId, {
+    await dbService.updateDocument(USERS, resolvedId, {
       wallet_balance: bal - val
     });
 
     const txId = 'tx_man_deb_' + Math.floor(Math.random() * 1000000).toString();
     await dbService.createDocument(TRANSACTIONS, txId, {
-      user_id: telegramId,
+      user_id: resolvedId,
       type: 'withdraw',
       amount: val,
       balance_before: bal,
@@ -1095,17 +1137,24 @@ app.post('/api/admin/users/:telegramId/notify', async (req, res) => {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: 'Message payload is required' });
 
-    const userData = await dbService.getDocument(USERS, telegramId);
+    const userData = await findUserByIdentifier(telegramId);
     if (!userData) return res.status(404).json({ error: 'User does not exist.' });
 
+    const resolvedId = userData.id || userData.$id || userData.telegram_id || telegramId;
     const notifications = userData.adminNotifications || [];
-    await dbService.updateDocument(USERS, telegramId, {
+    await dbService.updateDocument(USERS, resolvedId, {
       adminNotifications: [...notifications, `[Admin] ${message}`]
     });
 
-    // Alert the user instantly via active bot
+    // Alert the user instantly if they have a non-virtual Telegram ID
     const text = `📢 *Notification from Administration!*\n\nHello ${userData.name || 'Breeder'},\n${message}`;
-    await sendTelegramNotification(userData.telegram_id, text);
+    if (userData.telegram_id && !userData.telegram_id.startsWith('usr_')) {
+      try {
+        await sendTelegramNotification(userData.telegram_id, text);
+      } catch (tgErr) {
+        console.warn('Silent skip telegram notification dispatch:', tgErr);
+      }
+    }
 
     res.json({ success: true, message: 'Administrative notification dispatched!' });
   } catch (error: any) {
@@ -1116,9 +1165,120 @@ app.post('/api/admin/users/:telegramId/notify', async (req, res) => {
 app.get('/api/admin/users/:telegramId/transactions', async (req, res) => {
   try {
     const { telegramId } = req.params;
-    const txs = await dbService.listDocuments(TRANSACTIONS, [Query.equal('user_id', telegramId)]);
-    txs.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    res.json({ success: true, transactions: txs });
+    const userData = await findUserByIdentifier(telegramId);
+    if (!userData) {
+      return res.json({ success: true, transactions: [] });
+    }
+    const resolvedId = userData.id || userData.$id || userData.telegram_id || telegramId;
+    const txs = await dbService.listDocuments(TRANSACTIONS);
+    const matchedTxs = txs.filter(t => t.user_id === resolvedId || t.user_id === telegramId);
+    matchedTxs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    res.json({ success: true, transactions: matchedTxs });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/users/:telegramId', async (req, res) => {
+  try {
+    const { telegramId } = req.params;
+    
+    // Check if user exists
+    const userData = await findUserByIdentifier(telegramId);
+    if (!userData) {
+      return res.status(404).json({ error: 'User does not exist.' });
+    }
+
+    const resolvedId = userData.id || userData.$id || userData.telegram_id || telegramId;
+
+    // Delete user holdings
+    try {
+      const holdings = await dbService.listDocuments(FISH_HOLDINGS);
+      for (const h of holdings) {
+        const uId = String(h.user_id || '').trim();
+        if (uId === resolvedId || uId === telegramId) {
+          const holdingId = h.id || h.$id;
+          if (holdingId) {
+            await dbService.deleteDocument(FISH_HOLDINGS, holdingId);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Error clearing user holdings in deleting:', err.message);
+    }
+
+    // Delete user transactions
+    try {
+      const txs = await dbService.listDocuments(TRANSACTIONS);
+      for (const t of txs) {
+        const uId = String(t.user_id || '').trim();
+        if (uId === resolvedId || uId === telegramId) {
+          const txId = t.id || t.$id;
+          if (txId) {
+            await dbService.deleteDocument(TRANSACTIONS, txId);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Error clearing user transactions in deleting:', err.message);
+    }
+
+    // Delete user deposits
+    try {
+      const deposits = await dbService.listDocuments(DEPOSITS);
+      for (const d of deposits) {
+        const uId = String(d.user_id || '').trim();
+        if (uId === resolvedId || uId === telegramId) {
+          const depId = d.id || d.$id;
+          if (depId) {
+            await dbService.deleteDocument(DEPOSITS, depId);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Error clearing user deposits in deleting:', err.message);
+    }
+
+    // Delete user withdrawals
+    try {
+      const withdrawals = await dbService.listDocuments(WITHDRAWALS);
+      for (const w of withdrawals) {
+        const uId = String(w.user_id || '').trim();
+        if (uId === resolvedId || uId === telegramId) {
+          const witId = w.id || w.$id;
+          if (witId) {
+            await dbService.deleteDocument(WITHDRAWALS, witId);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Error clearing user withdrawals in deleting:', err.message);
+    }
+
+    // Delete user referrals
+    try {
+      const referrals = await dbService.listDocuments(REFERRALS);
+      for (const rDoc of referrals) {
+        const refId1 = String(rDoc.referrer_id || rDoc.referrerId || '').trim();
+        const refId2 = String(rDoc.referee_id || rDoc.refereeId || '').trim();
+        if (
+          refId1 === resolvedId || refId1 === telegramId ||
+          refId2 === resolvedId || refId2 === telegramId
+        ) {
+          const refDocId = rDoc.id || rDoc.$id;
+          if (refDocId) {
+            await dbService.deleteDocument(REFERRALS, refDocId);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Error clearing referrals in user deleting:', err.message);
+    }
+
+    // Finally delete user document
+    await dbService.deleteDocument(USERS, resolvedId);
+
+    res.json({ success: true, message: 'Farmer account and all associated holdings and ledger documents fully purged!' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1656,7 +1816,22 @@ app.put('/api/admin/market-fish/:id', async (req, res) => {
 app.delete('/api/admin/market-fish/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await dbService.deleteDocument(FISH_MARKET, id);
+    let targetId = id;
+    try {
+      const market = await dbService.listDocuments(FISH_MARKET);
+      const match = market.find(m => 
+        String(m.id || '').trim().toLowerCase() === String(id).trim().toLowerCase() || 
+        String(m.$id || '').trim().toLowerCase() === String(id).trim().toLowerCase() || 
+        String(m.name || '').trim().toLowerCase() === String(id).trim().toLowerCase()
+      );
+      if (match) {
+        targetId = match.id || match.$id || match.name || targetId;
+      }
+    } catch (e) {
+      console.error('Error finding market fish for delete:', e);
+    }
+
+    await dbService.deleteDocument(FISH_MARKET, targetId);
     res.json({ success: true, message: 'Farming breed stock cleared from dynamic registration index!' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1998,8 +2173,13 @@ async function startTelegramBotPolling() {
         const response = await fetch(`${pollUrl}?offset=${offset}&timeout=20`);
         if (!response.ok) {
           const errMsg = await response.text();
-          console.error(`[Telegram Bot] Error polling updates (HTTP ${response.status}):`, errMsg);
-          await new Promise(resolve => setTimeout(resolve, 8000));
+          if (response.status === 409) {
+            console.log(`[Telegram Bot] Polling conflict (HTTP 409). Another bot instance is active. Retrying with longer backoff (60s) to limit collisions...`);
+            await new Promise(resolve => setTimeout(resolve, 60000));
+          } else {
+            console.error(`[Telegram Bot] Error polling updates (HTTP ${response.status}):`, errMsg);
+            await new Promise(resolve => setTimeout(resolve, 8000));
+          }
           continue;
         }
 

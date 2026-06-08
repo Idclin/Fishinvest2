@@ -28,9 +28,11 @@ import {
   Filter,
   Check,
   Percent,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
-import { formatNaira, getApiUrl } from '../utils.ts';
+import { formatNaira, getApiUrl, resolveImageUrl } from '../utils.ts';
 
 const fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   if (typeof input === 'string' && input.startsWith('/')) {
@@ -88,6 +90,29 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
   const [showNotificationModal, setShowNotificationModal] = React.useState(false);
   const [notificationMessage, setNotificationMessage] = React.useState('');
 
+  // Custom modals/toast fallback for iframe sandboxing and clean design
+  const [confirmModal, setConfirmModal] = React.useState<{ 
+    show: boolean; 
+    title: string; 
+    message: string; 
+    onConfirm: () => void;
+    actionLabel?: string;
+    isDangerous?: boolean;
+  } | null>(null);
+
+  const [toastNotification, setToastNotification] = React.useState<{
+    show: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  } | null>(null);
+
+  const triggerToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToastNotification({ show: true, message, type });
+    setTimeout(() => {
+      setToastNotification(prev => prev && prev.message === message ? null : prev);
+    }, 4500);
+  };
+
   // Market Editing Modal States
   const [showMarketModal, setShowMarketModal] = React.useState(false);
   const [isEditingMarketSpec, setIsEditingMarketSpec] = React.useState(false);
@@ -108,6 +133,8 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
 
   const [isUploadingImage, setIsUploadingImage] = React.useState(false);
   const [uploadFeedback, setUploadFeedback] = React.useState('');
+  const [deletingUserIds, setDeletingUserIds] = React.useState<Record<string, boolean>>({});
+  const [deletingMarketIds, setDeletingMarketIds] = React.useState<Record<string, boolean>>({});
 
   // App-wide Logo / Icon Configuration States
   const [adminAppIconUrl, setAdminAppIconUrl] = React.useState<string | null>(null);
@@ -316,11 +343,42 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
       });
       if (r.ok) {
         loadUsers();
-        alert(`Successfully changed status of user to ${nextStatus}!`);
+        triggerToast(`Successfully changed status of user to ${nextStatus}!`, 'success');
       }
     } catch (err) {
-      alert('Failed to modify status rules.');
+      triggerToast('Failed to modify status rules.', 'error');
     }
+  };
+
+  const executeDeleteUser = async (telegramId: string) => {
+    setDeletingUserIds(prev => ({ ...prev, [telegramId]: true }));
+    try {
+      const r = await fetch(`/api/admin/users/${telegramId}`, {
+        method: 'DELETE'
+      });
+      if (r.ok) {
+        loadUsers();
+        triggerToast('Farmer account and all associated collections cleared successfully!', 'success');
+      } else {
+        const d = await r.json();
+        triggerToast(d.error || 'Failed to delete farmer.', 'error');
+      }
+    } catch (err) {
+      triggerToast('Error deleting user.', 'error');
+    } finally {
+      setDeletingUserIds(prev => ({ ...prev, [telegramId]: false }));
+    }
+  };
+
+  const deleteUser = (telegramId: string, name: string) => {
+    setConfirmModal({
+      show: true,
+      title: 'Permanently Purge Farmer?',
+      message: `Are you absolutely sure you want to permanently delete the user "${name || 'User'}" (ID: ${telegramId})? This will wipe all their ledger deposits, withdrawals, referrals, and investments cycles!`,
+      onConfirm: () => executeDeleteUser(telegramId),
+      actionLabel: 'Purge Account',
+      isDangerous: true
+    });
   };
 
   const submitEditUserForm = async (e: React.FormEvent) => {
@@ -572,22 +630,33 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
     }
   };
 
-  const deleteFishSpec = async (id: string) => {
-    if (!confirm('Are you absolutely sure you want to clear this breed stock? This will not affect active user pond cycles, but prevents future purchases.')) {
-      return;
-    }
+  const executeDeleteFishSpec = async (id: string) => {
+    setDeletingMarketIds(prev => ({ ...prev, [id]: true }));
     try {
       const r = await fetch(`/api/admin/market-fish/${id}`, { method: 'DELETE' });
       if (r.ok) {
         loadMarket();
-        alert('Specs cleared.');
+        triggerToast('Specs cleared.', 'success');
       } else {
         const error = await r.json();
-        alert(error.error || 'Failed to delete dynamic breed stock.');
+        triggerToast(error.error || 'Failed to delete dynamic breed stock.', 'error');
       }
     } catch (e) {
-      alert('Error during spec deletion.');
+      triggerToast('Error during spec deletion.', 'error');
+    } finally {
+      setDeletingMarketIds(prev => ({ ...prev, [id]: false }));
     }
+  };
+
+  const deleteFishSpec = (id: string) => {
+    setConfirmModal({
+      show: true,
+      title: 'Remove Breed Stock Spec?',
+      message: 'Are you absolutely sure you want to clear this breed stock? This will not affect active user pond cycles, but prevents future purchases.',
+      onConfirm: () => executeDeleteFishSpec(id),
+      actionLabel: 'Delete Spec',
+      isDangerous: true
+    });
   };
 
   // Computed Filters Lists
@@ -1084,7 +1153,7 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                         type="text"
                         value={usersSearch}
                         onChange={(e) => setUsersSearch(e.target.value)}
-                        placeholder="Search Telegram Id, name or phone..."
+                        placeholder="Search User ID, name or phone..."
                         className="bg-brand-bg/75 border border-cyan-900/30 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-cyan-500 text-white w-52 sm:w-60"
                       />
                     </div>
@@ -1122,112 +1191,140 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                           <td colSpan={8} className="p-8 text-center text-slate-500 italic">No registered farmers meet filters criteria.</td>
                         </tr>
                       ) : (
-                        getFilteredUsers().map((u, idx) => (
-                          <tr key={idx} className="hover:bg-cyan-500/[0.02] transition-all">
-                            <td className="p-4 space-y-0.5">
-                              <span className="font-bold text-white block">{u.name || 'Onboarding Pending'}</span>
-                              <span className="font-mono text-[10px] text-slate-500 block">{u.telegram_id || u.telegramId}</span>
-                              {u.phone && <span className="text-[10px] text-slate-400 block">{u.phone}</span>}
-                            </td>
-                            <td className="p-4 text-center">
-                              {u.name ? (
-                                <span className="bg-green-500/10 text-green-400 border border-green-500/20 text-[9px] px-1.5 py-0.5 rounded font-bold">YES</span>
-                              ) : (
-                                <span className="bg-slate-800 text-slate-500 text-[9px] px-1.5 py-0.5 rounded">NO</span>
-                              )}
-                            </td>
-                            <td className="p-4 font-mono text-[11px] text-slate-400">
-                              <span className="block">{u.virtualAccountNumber || 'N/A'}</span>
-                              <span className="block text-[9px] text-slate-500 uppercase">{u.bankName || 'No bank assigned'}</span>
-                            </td>
-                            <td className="p-4 text-right font-mono font-bold text-cyan-400">
-                              {formatNaira(u.walletBalance || 0)}
-                            </td>
-                            <td className="p-4 text-center font-mono font-bold text-purple-400">
-                              {u.fishQuantityOwned || 0}
-                            </td>
-                            <td className="p-4 text-center">
-                              <span className="bg-slate-800 text-slate-300 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-slate-700">
-                                {u.level || 'Beginner Farmer'}
-                              </span>
-                            </td>
-                            <td className="p-4 text-center">
-                              {u.status === 'suspended' ? (
-                                <span className="bg-rose-500/15 text-rose-400 border border-rose-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold">SUSPENDED</span>
-                              ) : (
-                                <span className="bg-green-500/15 text-green-400 border border-green-500/20 text-[10px] px-2 py-0.5 rounded-full">ACTIVE</span>
-                              )}
-                            </td>
-                            <td className="p-4 text-right space-y-1">
-                              {/* Operators controls row */}
-                              <div className="flex items-center justify-end gap-1.5">
-                                <button 
-                                  onClick={() => {
-                                    setSelectedUser(u);
-                                    setEditForm({
-                                      name: u.name || '',
-                                      phone: u.phone || '',
-                                      bankName: u.bankName || '',
-                                      accountNumber: u.accountNumber || ''
-                                    });
-                                    setShowEditModal(true);
-                                  }}
-                                  className="p-1.5 border border-cyan-900/30 text-slate-300 rounded hover:bg-cyan-500/10 cursor-pointer"
-                                  title="Edit Profile"
-                                >
-                                  <Edit className="w-3.5 h-3.5" />
-                                </button>
-                                
-                                <button 
-                                  onClick={() => {
-                                    setSelectedUser(u);
-                                    setShowCreditModal(true);
-                                  }}
-                                  className="text-[10px] bg-green-500/15 border border-green-555/20 text-green-400 px-1.5 py-1 rounded hover:bg-green-500/25 active:scale-95 transition-all cursor-pointer font-bold"
-                                  title="Credit NGN Wallet"
-                                >
-                                  + Credits
-                                </button>
+                        getFilteredUsers().map((u, idx) => {
+                          const resolvedTelegramId = String(u.telegram_id || u.telegramId || u.id || u.$id || '').trim();
+                          const normalizedUser = {
+                            ...u,
+                            telegram_id: resolvedTelegramId,
+                            telegramId: resolvedTelegramId
+                          };
+                          return (
+                            <tr key={idx} className="hover:bg-cyan-500/[0.02] transition-all">
+                              <td className="p-4 space-y-0.5">
+                                <span className="font-bold text-white block">{normalizedUser.name || 'Onboarding Pending'}</span>
+                                <span className="font-mono text-[10px] text-slate-500 block">{resolvedTelegramId}</span>
+                                {normalizedUser.phone && <span className="text-[10px] text-slate-400 block">{normalizedUser.phone}</span>}
+                              </td>
+                              <td className="p-4 text-center">
+                                {normalizedUser.name ? (
+                                  <span className="bg-green-500/10 text-green-400 border border-green-500/20 text-[9px] px-1.5 py-0.5 rounded font-bold">YES</span>
+                                ) : (
+                                  <span className="bg-slate-800 text-slate-500 text-[9px] px-1.5 py-0.5 rounded">NO</span>
+                                )}
+                              </td>
+                              <td className="p-4 font-mono text-[11px] text-slate-400">
+                                <span className="block">{normalizedUser.virtualAccountNumber || 'N/A'}</span>
+                                <span className="block text-[9px] text-slate-500 uppercase">{normalizedUser.bankName || 'No bank assigned'}</span>
+                              </td>
+                              <td className="p-4 text-right font-mono font-bold text-cyan-400">
+                                {formatNaira(normalizedUser.walletBalance || 0)}
+                              </td>
+                              <td className="p-4 text-center font-mono font-bold text-purple-400">
+                                {normalizedUser.fishQuantityOwned || 0}
+                              </td>
+                              <td className="p-4 text-center">
+                                <span className="bg-slate-800 text-slate-300 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-slate-700">
+                                  {normalizedUser.level || 'Beginner Farmer'}
+                                </span>
+                              </td>
+                              <td className="p-4 text-center">
+                                {normalizedUser.status === 'suspended' ? (
+                                  <span className="bg-rose-500/15 text-rose-400 border border-rose-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold">SUSPENDED</span>
+                                ) : (
+                                  <span className="bg-green-500/15 text-green-400 border border-green-500/20 text-[10px] px-2 py-0.5 rounded-full">ACTIVE</span>
+                                )}
+                              </td>
+                              <td className="p-4 text-right space-y-1">
+                                {/* Operators controls row */}
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedUser(normalizedUser);
+                                      setEditForm({
+                                        name: normalizedUser.name || '',
+                                        phone: normalizedUser.phone || '',
+                                        bankName: normalizedUser.bankName || '',
+                                        accountNumber: normalizedUser.accountNumber || ''
+                                      });
+                                      setShowEditModal(true);
+                                    }}
+                                    className="p-1.5 border border-cyan-900/30 text-slate-300 rounded hover:bg-cyan-500/10 cursor-pointer"
+                                    title="Edit Profile"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedUser(normalizedUser);
+                                      setShowCreditModal(true);
+                                    }}
+                                    className="text-[10px] bg-green-500/15 border border-green-555/20 text-green-400 px-1.5 py-1 rounded hover:bg-green-500/25 active:scale-95 transition-all cursor-pointer font-bold"
+                                    title="Credit NGN Wallet"
+                                  >
+                                    + Credits
+                                  </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setSelectedUser(u);
-                                    setShowDebitModal(true);
-                                  }}
-                                  className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-500 px-1.5 py-1 rounded hover:bg-amber-500/20 active:scale-95 transition-all cursor-pointer font-bold"
-                                  title="Debit Wallet"
-                                >
-                                  - Debits
-                                </button>
-                              </div>
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedUser(normalizedUser);
+                                      setShowDebitModal(true);
+                                    }}
+                                    className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-500 px-1.5 py-1 rounded hover:bg-amber-500/20 active:scale-95 transition-all cursor-pointer font-bold"
+                                    title="Debit Wallet"
+                                  >
+                                    - Debits
+                                  </button>
+                                </div>
 
-                              <div className="flex items-center justify-end gap-1.5">
-                                <button 
-                                  onClick={() => {
-                                    setSelectedUser(u);
-                                    setShowNotificationModal(true);
-                                  }}
-                                  className="p-1.5 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded hover:bg-cyan-500/20 cursor-pointer"
-                                  title="Send push alert notification"
-                                >
-                                  <Bell className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedUser(normalizedUser);
+                                      setShowNotificationModal(true);
+                                    }}
+                                    className="p-1.5 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded hover:bg-cyan-500/20 cursor-pointer"
+                                    title="Send push alert notification"
+                                  >
+                                    <Bell className="w-3.5 h-3.5" />
+                                  </button>
 
-                                <button 
-                                  onClick={() => changeUserStatus(u.telegram_id, u.status)}
-                                  className={`px-1.5 py-1 border text-[10px] font-black rounded active:scale-95 transition-all cursor-pointer ${
-                                    u.status === 'suspended'
-                                      ? 'bg-rose-500/20 border-rose-500/45 text-rose-400 hover:bg-rose-500/30'
-                                      : 'bg-slate-800 border-rose-900/40 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10'
-                                  }`}
-                                  title={u.status === 'suspended' ? 'Unsuspend User Account' : 'Suspend User Account'}
-                                >
-                                  {u.status === 'suspended' ? 'Unsuspend' : 'Suspend'}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
+                                  <button 
+                                    onClick={() => changeUserStatus(resolvedTelegramId, normalizedUser.status)}
+                                    className={`px-1.5 py-1 border text-[10px] font-black rounded active:scale-95 transition-all cursor-pointer ${
+                                      normalizedUser.status === 'suspended'
+                                        ? 'bg-rose-500/20 border-rose-500/45 text-rose-400 hover:bg-rose-500/30'
+                                        : 'bg-slate-800 border-rose-900/40 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10'
+                                    }`}
+                                    title={normalizedUser.status === 'suspended' ? 'Unsuspend User Account' : 'Suspend User Account'}
+                                  >
+                                    {normalizedUser.status === 'suspended' ? 'Unsuspend' : 'Suspend'}
+                                  </button>
+
+                                  <button 
+                                    onClick={() => deleteUser(resolvedTelegramId, normalizedUser.name)}
+                                    disabled={deletingUserIds[resolvedTelegramId]}
+                                    className={`p-1.5 rounded border cursor-pointer transition-all flex items-center gap-1 ${
+                                      deletingUserIds[resolvedTelegramId]
+                                        ? 'bg-rose-500/30 border-rose-500/50 text-rose-300 opacity-80 cursor-not-allowed'
+                                        : 'bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/20'
+                                    }`}
+                                    title="Permanently Delete/Remove User"
+                                  >
+                                    {deletingUserIds[resolvedTelegramId] ? (
+                                      <>
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        <span className="text-[10px] font-mono font-bold uppercase">Wiping...</span>
+                                      </>
+                                    ) : (
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1798,7 +1895,7 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
 
                         <div className="space-y-3">
                           <img 
-                            src={f.image || 'https://images.unsplash.com/photo-1522069169874-c58ec4b76be5?w=200&auto=format&fit=crop&q=80'} 
+                            src={f.image ? resolveImageUrl(f.image) : 'https://images.unsplash.com/photo-1522069169874-c58ec4b76be5?w=200&auto=format&fit=crop&q=80'} 
                             alt={f.displayName}
                             className="w-full h-24 object-cover rounded-2xl border border-cyan-900/20 shadow-inner"
                             referrerPolicy="no-referrer"
@@ -1851,10 +1948,22 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                           
                           <button 
                             onClick={() => deleteFishSpec(f.id)}
-                            className="p-1.5 text-rose-400 border border-rose-900/30 rounded-lg hover:bg-rose-500/10 cursor-pointer"
+                            disabled={deletingMarketIds[f.id]}
+                            className={`p-1.5 border rounded-lg cursor-pointer transition-all flex items-center gap-1 ${
+                              deletingMarketIds[f.id]
+                                ? 'bg-rose-500/30 border-rose-500/50 text-rose-300 opacity-80 cursor-not-allowed'
+                                : 'text-rose-400 border-rose-900/30 hover:bg-rose-500/10'
+                            }`}
                             title="Delete spec drop configuration"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {deletingMarketIds[f.id] ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span className="text-[10px] font-mono font-bold uppercase">Deleting...</span>
+                              </>
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
                           </button>
                         </div>
 
@@ -1880,7 +1989,7 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                           {adminAppIconUrl ? (
                             <div className="relative group">
                               <img 
-                                src={adminAppIconUrl} 
+                                src={resolveImageUrl(adminAppIconUrl)} 
                                 alt="FishInvest Logo" 
                                 className="w-20 h-20 rounded-2xl object-cover ring-2 ring-cyan-500/50 shadow-lg shadow-cyan-500/15" 
                                 referrerPolicy="no-referrer"
@@ -2125,7 +2234,7 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                                 }}
                                 className={`h-11 rounded-lg overflow-hidden border cursor-pointer relative group transition-all duration-200 outline-none select-none p-0 bg-transparent ${isCurrent ? 'border-cyan-500 scale-[0.97] ring-1 ring-cyan-500/50' : 'border-cyan-900/30 hover:border-cyan-500/40'}`}
                               >
-                                <img src={url} alt={`Upload ${idx}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <img src={resolveImageUrl(url)} alt={`Upload ${idx}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                 {isCurrent && (
                                   <div className="absolute inset-0 bg-cyan-950/60 flex items-center justify-center">
                                     <span className="text-[8px] bg-cyan-500 text-slate-950 font-sans font-black uppercase px-1 rounded-sm leading-none py-0.5">Active</span>
@@ -2601,7 +2710,7 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                     {marketForm.image ? (
                       <div className="flex items-center gap-3 justify-center">
                         <img 
-                          src={marketForm.image} 
+                          src={resolveImageUrl(marketForm.image)} 
                           alt="Thumbnail Preview" 
                           className="w-12 h-12 object-cover rounded-lg border border-cyan-500/30"
                         />
@@ -2676,6 +2785,97 @@ export default function AdminPanel({ onBackToApp }: AdminPanelProps) {
                 </button>
               </form>
             </motion.div>
+          </motion.div>
+        )}
+
+        {/* MODAL: CUSTOM iframe-SAFE CONFIRMATION DIALOG */}
+        {confirmModal && confirmModal.show && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95 }} 
+              animate={{ scale: 1 }} 
+              exit={{ scale: 0.95 }}
+              className="bg-slate-950 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl relative max-w-sm w-full"
+            >
+              <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                <span className="font-sans font-black text-xs text-white flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" />
+                  {confirmModal.title}
+                </span>
+                <button 
+                  onClick={() => setConfirmModal(null)} 
+                  className="text-slate-400 hover:text-white border-none bg-transparent cursor-pointer text-lg"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="text-slate-300 text-xs font-sans leading-relaxed">
+                {confirmModal.message}
+              </div>
+
+              <div className="flex items-center gap-3 pt-3">
+                <button
+                  onClick={() => setConfirmModal(null)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 text-center text-xs transition rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    confirmModal.onConfirm();
+                    setConfirmModal(null);
+                  }}
+                  className={`flex-1 font-bold py-2 text-center text-xs transition rounded-xl cursor-pointer ${
+                    confirmModal.isDangerous 
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white' 
+                      : 'bg-cyan-500 hover:bg-cyan-400 text-slate-900'
+                  }`}
+                >
+                  {confirmModal.actionLabel || 'Confirm'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* COMPONENT: TOAST NOTIFICATIONS BANNER */}
+        {toastNotification && toastNotification.show && (
+          <motion.div
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -50 }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-50 max-w-xs w-full px-4"
+          >
+            <div className={`shadow-2xl border rounded-2xl p-3 flex items-center gap-2.5 font-sans ${
+              toastNotification.type === 'error'
+                ? 'bg-rose-950/90 border-rose-500/30 text-rose-300'
+                : toastNotification.type === 'info'
+                  ? 'bg-slate-900/95 border-cyan-500/30 text-cyan-300'
+                  : 'bg-emerald-950/90 border-emerald-500/30 text-emerald-300'
+            }`}>
+              {toastNotification.type === 'error' ? (
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+              ) : toastNotification.type === 'info' ? (
+                <Info className="w-4 h-4 flex-shrink-0 text-cyan-400" />
+              ) : (
+                <CheckCircle className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+              )}
+              <div className="flex-1 text-[11px] font-semibold select-none leading-snug font-sans">
+                {toastNotification.message}
+              </div>
+              <button
+                onClick={() => setToastNotification(null)}
+                className="text-slate-400 hover:text-white bg-transparent border-none cursor-pointer font-bold text-xs"
+              >
+                ×
+              </button>
+            </div>
           </motion.div>
         )}
 

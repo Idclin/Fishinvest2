@@ -1,5 +1,7 @@
 import { Client, Databases, ID, Query } from 'node-appwrite';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 import { USERS, FISH_MARKET, FISH_HOLDINGS, TRANSACTIONS, WITHDRAWALS, DEPOSITS, REFERRALS, CYCLES, NOTIFICATIONS_LOG } from './collections.js';
 
 dotenv.config();
@@ -131,6 +133,34 @@ const memoryDb: InMemoryDb = {
   cycles: {},
   notifications_log: {}
 };
+
+const DB_FILE = path.join(process.cwd(), 'memoryDb.json');
+
+function saveToDisk() {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Failed to save memory database to disk:', e);
+  }
+}
+
+function loadFromDisk() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const content = fs.readFileSync(DB_FILE, 'utf8');
+      const parsed = JSON.parse(content);
+      if (parsed) {
+        Object.assign(memoryDb, parsed);
+        console.log('✅ [Appwrite DB Fallback] Successfully loaded persisted states from memoryDb.json');
+      }
+    }
+  } catch (e) {
+    console.warn('Could not read memory database from disk, proceeding fresh:', e);
+  }
+}
+
+// Call load immediately upon start
+loadFromDisk();
 
 // Initialize Appwrite components safely
 let appwriteClient: Client | null = null;
@@ -389,6 +419,7 @@ export const dbService = {
     const store = memoryDb[collectionId as keyof InMemoryDb];
     if (store) {
       store[cleanData.id] = cleanData;
+      saveToDisk();
     }
 
     const dbs = getAppwriteDatabases();
@@ -412,8 +443,10 @@ export const dbService = {
     const store = memoryDb[collectionId as keyof InMemoryDb];
     if (store && store[documentId]) {
       store[documentId] = { ...store[documentId], ...data };
+      saveToDisk();
     } else if (store) {
       store[documentId] = data;
+      saveToDisk();
     }
 
     const dbs = getAppwriteDatabases();
@@ -439,6 +472,7 @@ export const dbService = {
     const store = memoryDb[collectionId as keyof InMemoryDb];
     if (store) {
       delete store[documentId];
+      saveToDisk();
     }
 
     const dbs = getAppwriteDatabases();
@@ -489,6 +523,8 @@ export const dbService = {
   mapDocumentOut(collectionId: string, doc: any): any {
     if (!doc) return doc;
     const result = { ...doc };
+    if (doc.$id && !doc.id) result.id = doc.$id;
+    if (doc.id && !doc.$id) result.$id = doc.id;
     const schema = SCHEMA_CONFIG[collectionId];
     if (!schema) return result;
 

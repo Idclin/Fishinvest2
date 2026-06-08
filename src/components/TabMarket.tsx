@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FISH_SPECS, FishType } from '../types.ts';
-import { formatNaira, getApiUrl } from '../utils.ts';
+import { formatNaira, getApiUrl, resolveImageUrl } from '../utils.ts';
 import { ShoppingBag, ChevronRight, Calculator, Check, AlertCircle } from 'lucide-react';
 
 interface TabMarketProps {
@@ -107,22 +107,32 @@ export default function TabMarket({
 
   const computedList = React.useMemo(() => {
     if (marketCatalog && marketCatalog.length > 0) {
-      return marketCatalog.map((item) => ({
-        id: item.id || item.name,
-        name: item.name || item.id,
-        displayName: item.displayName,
-        price: item.price,
-        dailyProfit: item.dailyProfit !== undefined ? item.dailyProfit : item.daily_profit,
-        weeklyProfit: item.weeklyProfit !== undefined ? item.weeklyProfit : item.weekly_profit,
-        image: item.image || item.photo_url || item.photoUrl,
-        color: item.color || (item.name === 'meluza' ? '#38bdf8' : item.name === 'schoolbian' ? '#4ade80' : item.name === 'catfish' ? '#fb923c' : '#06b6d4'),
-        tag: item.tag || 'PREMIUM',
-        status: item.status || 'Active',
-        limited: !!(item.limited !== undefined ? item.limited : item.is_limited),
-        unitsLimit: item.unitsLimit !== undefined ? item.unitsLimit : item.units_limit,
-        unitsSold: item.unitsSold !== undefined ? item.unitsSold : item.units_sold,
-        description: item.description
-      })).filter(spec => spec.status === 'Active');
+      return marketCatalog.map((item) => {
+        const nameLower = (item.name || '').toLowerCase().trim();
+        const baseImage = item.image || item.photo_url || item.photoUrl;
+        const resolvedImage = 
+          nameLower === 'meluza' ? FISH_SPECS.meluza.image :
+          nameLower === 'schoolbian' ? FISH_SPECS.schoolbian.image :
+          nameLower === 'catfish' ? FISH_SPECS.catfish.image :
+          baseImage;
+
+        return {
+          id: item.id || item.name,
+          name: item.name || item.id,
+          displayName: item.displayName,
+          price: item.price,
+          dailyProfit: item.dailyProfit !== undefined ? item.dailyProfit : item.daily_profit,
+          weeklyProfit: item.weeklyProfit !== undefined ? item.weeklyProfit : item.weekly_profit,
+          image: resolvedImage,
+          color: item.color || (nameLower === 'meluza' ? '#38bdf8' : nameLower === 'schoolbian' ? '#4ade80' : nameLower === 'catfish' ? '#fb923c' : '#06b6d4'),
+          tag: item.tag || 'PREMIUM',
+          status: item.status || 'Active',
+          limited: !!(item.limited !== undefined ? item.limited : item.is_limited),
+          unitsLimit: item.unitsLimit !== undefined ? item.unitsLimit : item.units_limit,
+          unitsSold: item.unitsSold !== undefined ? item.unitsSold : item.units_sold,
+          description: item.description
+        };
+      }).filter(spec => spec.status === 'Active');
     }
 
     // Default fallback list converting FISH_SPECS map to list
@@ -185,13 +195,13 @@ export default function TabMarket({
 
       {/* Fish listings cards */}
       <div className="grid grid-cols-1 gap-4">
-        {computedList.map((spec) => {
+        {computedList.map((spec, idx) => {
           const earns = getProTestedEarns(spec);
           const activeDaysCount = activeDays;
           
           return (
             <div
-              key={spec.id}
+              key={`${spec.id || 'market'}-${idx}`}
               onClick={() => simulatedDay.trim().toLowerCase() !== 'sunday' && handleOpenBuyModal(spec)}
               className={`bg-brand-box/90 border border-cyan-900/30 rounded-2xl p-4 flex items-center gap-5 relative overflow-hidden group transition-all duration-300 ${
                 simulatedDay.trim().toLowerCase() === 'sunday' 
@@ -213,10 +223,13 @@ export default function TabMarket({
                 style={{ borderColor: `${spec.color}33` }}
               >
                 <img
-                  src={spec.image}
+                  src={resolveImageUrl(spec.image)}
                   alt={spec.displayName}
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-contain filter drop-shadow-md group-hover:scale-110 transition-transform duration-300"
+                  onError={(e) => {
+                    e.currentTarget.src = FISH_SPECS.meluza.image;
+                  }}
                 />
               </div>
 
@@ -274,10 +287,13 @@ export default function TabMarket({
               <div className="flex items-center gap-4 border-b border-cyan-900/20 pb-4">
                 <div className="w-16 h-16 rounded-xl bg-brand-bg p-1 border border-cyan-900/30 flex items-center justify-center">
                   <img
-                    src={selectedFish.image}
+                    src={resolveImageUrl(selectedFish.image)}
                     alt={selectedFish.displayName}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-contain"
+                    onError={(e) => {
+                      e.currentTarget.src = FISH_SPECS.meluza.image;
+                    }}
                   />
                 </div>
                 <div>
@@ -393,7 +409,7 @@ export default function TabMarket({
     </div>
   );
 
-  function getProTestedEarns(key: FishType) {
-    return getProRatedDailyEarnings(key);
+  function getProTestedEarns(spec: any) {
+    return getProRatedDailyEarnings(spec);
   }
 }

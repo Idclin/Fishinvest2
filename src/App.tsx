@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, FishHolding, Transaction, FISH_SPECS } from './types.ts';
-import { formatNaira, getApiUrl } from './utils.ts';
+import { formatNaira, getApiUrl, resolveImageUrl } from './utils.ts';
 
 // Dynamic Sub-components
 import OnboardingFlow from './components/OnboardingFlow.tsx';
@@ -12,6 +12,7 @@ import TabWithdraw from './components/TabWithdraw.tsx';
 import TabInvite from './components/TabInvite.tsx';
 import TabRanks from './components/TabRanks.tsx';
 import AdminPanel from './components/AdminPanel.tsx';
+import ErrorBoundary from './components/ErrorBoundary.tsx';
 
 // Icons
 import { Compass, Database, Landmark, Heart, Users, Trophy, Bell, HelpCircle, Activity, ShieldCheck, LogOut } from 'lucide-react';
@@ -35,6 +36,15 @@ export default function App() {
 
   const [activeTab, setActiveTab ] = useState('market');
   const [notificationLog, setNotificationLog] = useState<string[]>([]);
+  interface AppToast {
+    id: string;
+    message: string;
+    type: 'info' | 'success' | 'warning' | 'error' | 'fish' | 'profit';
+    timestamp: Date;
+  }
+  const [toasts, setToasts] = useState<AppToast[]>([]);
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(1);
   const [loading, setLoading] = useState(true);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
@@ -172,11 +182,87 @@ export default function App() {
     }
   }, [referredByQuery]);
 
-  const addNotification = (msg: string) => {
+  const addNotification = (msg: string, type: 'info' | 'success' | 'warning' | 'error' | 'fish' | 'profit' = 'info') => {
+    let resolvedType = type;
+    const msgLower = msg.toLowerCase();
+    if (msgLower.includes('pond') || msgLower.includes('profit') || msgLower.includes('earnings') || msgLower.includes('payout') || msgLower.includes('deposit')) {
+      resolvedType = 'profit';
+    } else if (msgLower.includes('fish') || msgLower.includes('limited') || msgLower.includes('released') || msgLower.includes('breed') || msgLower.includes('meluza') || msgLower.includes('catfish')) {
+      resolvedType = 'fish';
+    } else if (msgLower.includes('success') || msgLower.includes('successfully') || msgLower.includes('authorized') || msgLower.includes('welcome')) {
+      resolvedType = 'success';
+    } else if (msgLower.includes('warning') || msgLower.includes('conflict') || msgLower.includes('fail') || msgLower.includes('error') || msgLower.includes('glitch')) {
+      resolvedType = 'warning';
+    }
+
+    const newToast: AppToast = {
+      id: Math.random().toString(),
+      message: msg,
+      type: resolvedType,
+      timestamp: new Date()
+    };
+
+    setToasts((prev) => [...prev, newToast]);
     setNotificationLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+    setUnreadCount((prev) => prev + 1);
+
+    // Auto delete after 5500ms
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
+    }, 5500);
   };
 
   const clearNotificationLogs = () => setNotificationLog([]);
+
+  // Periodic background simulated notification injector
+  useEffect(() => {
+    if (!user || !user.name) return;
+
+    const interval = setInterval(() => {
+      // 15% chance to trigger a notification every 60 seconds
+      if (Math.random() > 0.15) return;
+
+      const mockAlerts = [
+        {
+          message: "🌊 Pond profits are fully matured! Double check your active yields in the Pond tab.",
+          type: "profit" as const
+        },
+        {
+          message: "🏪 Limited-Edition Golden Imperial Koi has been released in the Market catalog! Limited stocks remain.",
+          type: "fish" as const
+        },
+        {
+          message: "📈 Active daily feed streak maintained. Sunday payout tier boosted by 1.5%!",
+          type: "success" as const
+        },
+        {
+          message: "🌊 Marine temperature conditions are optimal! Fish growth rates stabilized at 100%.",
+          type: "info" as const
+        },
+        {
+          message: "🏪 Market Spec Release: Deepwater Meluza pricing updated. High Sunday staking demands registered.",
+          type: "fish" as const
+        },
+        {
+          message: "🔔 Network safety check complete: Dedicated Providus Virtual Bank accounts synchronized.",
+          type: "success" as const
+        }
+      ];
+
+      const chosen = mockAlerts[Math.floor(Math.random() * mockAlerts.length)];
+      addNotification(chosen.message, chosen.type);
+    }, 60000);
+
+    // Also trigger initial welcome simulation after 4.5 seconds to show the user the feature right away!
+    const startupTimeout = setTimeout(() => {
+      addNotification("🌊 Welcome to FishInvest! Staked marine assets are successfully generating daily passive earnings.", "success");
+    }, 4500);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(startupTimeout);
+    };
+  }, [user]);
 
   const [marketCatalog, setMarketCatalog] = useState<any[]>([]);
   const [appIconUrl, setAppIconUrl] = useState<string | null>(null);
@@ -227,7 +313,16 @@ export default function App() {
       // 2. Fetch active holdings pond and transaction history mapping
       const syncData = await fetchJson(`/api/users/${simulatedId}/sync`);
       if (syncData) {
-        setHoldings(syncData.holdings || []);
+        const mappedHoldings = (syncData.holdings || []).map((h: any) => ({
+          id: h.$id || h.id || '',
+          userId: h.user_id || h.userId || '',
+          fishType: h.fish_id || h.fishType || 'meluza',
+          quantity: Number(h.quantity || 0),
+          stakedDay: h.staked_day || h.stakedDay || 'monday',
+          stakedAt: h.staked_at || h.stakedAt || '',
+          cycleId: h.cycle_id || h.cycleId || '',
+        }));
+        setHoldings(mappedHoldings);
         setTransactions(syncData.transactions || []);
 
         const refList = (syncData.transactions || []).filter((tx: Transaction) => tx.type === 'referral');
@@ -376,34 +471,37 @@ export default function App() {
 
   if (!simulatedId) {
     return (
-      <div className="min-h-screen bg-brand-bg text-slate-100 flex flex-col font-sans relative overflow-x-hidden justify-center items-center">
-        {/* Floating Animated Bubbles background decoration */}
-        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-          <div className="absolute top-10 left-10 w-32 h-32 rounded-full bg-cyan-500/10 blur-3xl" />
-          <div className="absolute bottom-20 right-5 w-64 h-64 rounded-full bg-blue-500/10 blur-3xl" />
+      <ErrorBoundary>
+        <div className="min-h-screen bg-brand-bg text-slate-100 flex flex-col font-sans relative overflow-x-hidden justify-center items-center">
+          {/* Floating Animated Bubbles background decoration */}
+          <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+            <div className="absolute top-10 left-10 w-32 h-32 rounded-full bg-cyan-500/10 blur-3xl" />
+            <div className="absolute bottom-20 right-5 w-64 h-64 rounded-full bg-blue-500/10 blur-3xl" />
+          </div>
+          
+          <UserAuth 
+            referredByQueryParam={referredByQuery} 
+            appIconUrl={appIconUrl}
+            onAuthSuccess={(u: any) => {
+              localStorage.setItem('fishinvest_user_id', u.telegram_id);
+              setSimulatedId(u.telegram_id);
+              setUser(u);
+              if (u.telegram_id === 'admin_owner' || u.telegram_id === '6395906533' || u.email === 'idehenclintonn@gmail.com' || (u.email && u.email.toLowerCase().includes('onefootball76'))) {
+                localStorage.setItem('fishinvest_admin_unlocked', 'true');
+                setIsAdminUnlocked(true);
+                setShowAdminPanel(true);
+              }
+              addNotification(`🛡️ Authorized successfully: ${u.name || u.email}`);
+            }} 
+          />
         </div>
-        
-        <UserAuth 
-          referredByQueryParam={referredByQuery} 
-          appIconUrl={appIconUrl}
-          onAuthSuccess={(u: any) => {
-            localStorage.setItem('fishinvest_user_id', u.telegram_id);
-            setSimulatedId(u.telegram_id);
-            setUser(u);
-            if (u.telegram_id === 'admin_owner' || u.telegram_id === '6395906533' || u.email === 'idehenclintonn@gmail.com' || (u.email && u.email.toLowerCase().includes('onefootball76'))) {
-              localStorage.setItem('fishinvest_admin_unlocked', 'true');
-              setIsAdminUnlocked(true);
-              setShowAdminPanel(true);
-            }
-            addNotification(`🛡️ Authorized successfully: ${u.name || u.email}`);
-          }} 
-        />
-      </div>
+      </ErrorBoundary>
     );
   }
 
   return (
-    <div className="min-h-screen bg-brand-bg text-slate-100 flex flex-col font-sans relative overflow-x-hidden">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-brand-bg text-slate-100 flex flex-col font-sans relative overflow-x-hidden">
       
       {/* Real-time Administrative Suspension Blocking Screen */}
       {user && user.status === 'suspended' && (
@@ -549,11 +647,18 @@ export default function App() {
                 className="flex items-center gap-3 cursor-pointer select-none"
                 title="Tap 5 times for security console access"
               >
-                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 overflow-hidden flex items-center justify-center text-xl shadow-[0_0_15px_rgba(6,182,212,0.4)]">
-                  {appIconUrl ? (
-                    <img src={appIconUrl} alt="FishInvest" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    "🐟"
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 overflow-hidden flex items-center justify-center text-xl shadow-[0_0_15px_rgba(6,182,212,0.4)] relative">
+                  <span>🐟</span>
+                  {appIconUrl && (
+                    <img 
+                      src={resolveImageUrl(appIconUrl)} 
+                      alt="FishInvest" 
+                      className="w-full h-full object-cover absolute inset-0 z-10" 
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
                   )}
                 </div>
                 <div>
@@ -571,6 +676,24 @@ export default function App() {
                     {simulatedDay}
                   </div>
                 </div>
+
+                {/* Visual Notification Bell */}
+                <button
+                  onClick={() => {
+                    setShowNotificationCenter(true);
+                    setUnreadCount(0);
+                  }}
+                  className="p-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 rounded-xl active:scale-95 transition-all cursor-pointer flex items-center justify-center relative shadow"
+                  title="Notification Center & Simulations"
+                >
+                  <Bell className="w-3.5 h-3.5 animate-pulse" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 border border-slate-900 rounded-full animate-ping" />
+                  )}
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 border border-slate-900 rounded-full" />
+                  )}
+                </button>
 
                 <button
                   onClick={handleLogout}
@@ -691,6 +814,217 @@ export default function App() {
         </div>
       )}
 
+      {/* Floating Toast Notification Stack */}
+      <div className="fixed top-4 right-4 z-50 pointer-events-none max-w-sm w-full flex flex-col items-end gap-2.5 px-4 sm:px-0">
+        <AnimatePresence>
+          {toasts.map((toast) => {
+            let bg = "bg-brand-box/95 border-cyan-500/30 shadow-cyan-950/20";
+            let iconText = "🐟";
+            let colorAccent = "border-l-4 border-l-cyan-400";
+            
+            if (toast.type === 'profit') {
+              bg = "bg-brand-box/95 border-emerald-500/30 shadow-emerald-950/20";
+              iconText = "🌊";
+              colorAccent = "border-l-4 border-l-emerald-400";
+            } else if (toast.type === 'fish') {
+              bg = "bg-brand-box/95 border-blue-500/30 shadow-blue-950/20";
+              iconText = "🏪";
+              colorAccent = "border-l-4 border-l-blue-400";
+            } else if (toast.type === 'success') {
+              bg = "bg-brand-box/95 border-teal-500/30 shadow-teal-950/20";
+              iconText = "✅";
+              colorAccent = "border-l-4 border-l-teal-400";
+            } else if (toast.type === 'warning') {
+              bg = "bg-brand-box/95 border-rose-500/30 shadow-rose-950/20";
+              iconText = "⚠️";
+              colorAccent = "border-l-4 border-l-rose-400";
+            }
+
+            return (
+              <motion.div
+                key={toast.id}
+                initial={{ opacity: 0, y: -20, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8, x: 20 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                className={`pointer-events-auto flex items-start gap-3 p-4 rounded-2xl border backdrop-blur-md shadow-lg ${bg} ${colorAccent} max-w-sm w-full`}
+              >
+                <div className="text-xl shrink-0 leading-none">{iconText}</div>
+                <div className="flex-1 space-y-1">
+                  <p className="text-[11px] font-sans font-extrabold text-slate-100 leading-snug">
+                    {toast.message}
+                  </p>
+                  <span className="text-[8px] font-mono text-slate-500 block">
+                    just now
+                  </span>
+                </div>
+                <button
+                  onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  className="text-slate-500 hover:text-slate-350 active:scale-95 text-xs font-bold px-1"
+                >
+                  ✕
+                </button>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+
+      {/* Visual Notification Hub Drawer */}
+      <AnimatePresence>
+        {showNotificationCenter && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 backdrop-blur-sm">
+            <div 
+              className="absolute inset-0" 
+              onClick={() => setShowNotificationCenter(false)} 
+            />
+
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 220 }}
+              className="relative max-w-lg w-full bg-brand-bg border-t border-cyan-500/20 rounded-t-[32px] overflow-hidden shadow-2xl z-10 flex flex-col max-h-[85vh] text-left"
+            >
+              <div className="w-12 h-1 bg-slate-700/60 rounded-full mx-auto my-3 shrink-0" />
+
+              <div className="px-6 pb-4 border-b border-cyan-950 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🔔</span>
+                  <div>
+                    <h2 className="text-sm font-black text-white">Notification Alert Control</h2>
+                    <span className="text-[9px] font-mono text-slate-400">Trigger simulated events & inspect activity logs</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowNotificationCenter(false)}
+                  className="w-8 h-8 rounded-full bg-brand-box border border-cyan-900/40 text-slate-400 hover:text-white flex items-center justify-center text-xs font-bold active:scale-90 transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                
+                <div className="space-y-3">
+                  <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
+                    <span className="text-cyan-400">⚡</span>
+                    Testing Console: Trigger Simulations
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        addNotification("🌊 Pond profits are fully matured! Double check your active yields in the Pond tab.", "profit");
+                        addNotification("✅ Simulated Pond profits ready alert initiated! Check the banner popups.", "success");
+                      }}
+                      className="p-3 bg-brand-box/60 border border-emerald-500/20 hover:border-emerald-500/40 rounded-2xl text-left active:scale-[0.98] transition-all cursor-pointer group hover:bg-emerald-500/5"
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-lg">🌊</span>
+                        <span className="text-xs font-extrabold text-neutral-100 group-hover:text-emerald-300 transition-colors">Pond Profits Ready</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-snug">
+                        Fires an alert informing that stakers have harvested yields and need to cash out.
+                      </p>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        addNotification("🏪 Limited-Edition Golden Imperial Koi has been cataloged! Only 50 units open for stakes.", "fish");
+                        addNotification("✅ Simulated market release alert successfully dispatched!", "success");
+                        setTimeout(() => {
+                          addNotification("🔥 High-demand staking alert: Grab Koi stocks before Sunday closure!", "warning");
+                        }, 1800);
+                      }}
+                      className="p-3 bg-brand-box/60 border border-blue-500/20 hover:border-blue-500/40 rounded-2xl text-left active:scale-[0.98] transition-all cursor-pointer group hover:bg-blue-500/5"
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-lg">🏪</span>
+                        <span className="text-xs font-extrabold text-neutral-100 group-hover:text-blue-300 transition-colors">Limited Fish Release</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-snug">
+                        Fires a system broad alert about newly cataloged rare and premium fish specimens.
+                      </p>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        addNotification("📈 Daily feed check-in registered! Active streak multiplier incremented.", "success");
+                      }}
+                      className="p-3 bg-brand-box/60 border border-cyan-500/20 hover:border-cyan-500/40 rounded-2xl text-left active:scale-[0.98] transition-all cursor-pointer group hover:bg-cyan-500/5"
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-lg">📈</span>
+                        <span className="text-xs font-extrabold text-neutral-100 group-hover:text-cyan-300 transition-colors">Streak Multiplier Upgrade</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-snug">
+                        Simulates user daily feeding streak and level up incentives active notification.
+                      </p>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        addNotification("ℹ️ Payment validated: Provident dynamic virtual credit verified. Enjoy high yields!", "info");
+                      }}
+                      className="p-3 bg-brand-box/60 border border-teal-500/20 hover:border-teal-500/40 rounded-2xl text-left active:scale-[0.98] transition-all cursor-pointer group hover:bg-teal-500/5"
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-lg">💳</span>
+                        <span className="text-xs font-extrabold text-neutral-100 group-hover:text-teal-300 transition-colors">Deposit System Audit</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-snug">
+                        Simulates virtual ledger validation and proof of stake verification notification.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
+                      <span className="text-cyan-400">📋</span>
+                      Activity Logging Center ({notificationLog.length})
+                    </h3>
+                    {notificationLog.length > 0 && (
+                      <button
+                        onClick={clearNotificationLogs}
+                        className="text-[10px] text-rose-450 hover:underline font-bold active:scale-95 transition-all cursor-pointer"
+                      >
+                        Wipe All Logs
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="bg-brand-box border border-cyan-950 rounded-2xl overflow-hidden">
+                    {notificationLog.length === 0 ? (
+                      <div className="p-8 text-center space-y-1">
+                        <span className="text-2xl block">📬</span>
+                        <p className="text-xs text-slate-400 font-bold">Log is empty</p>
+                        <p className="text-[10px] text-slate-500">Trigger alerts using testing console buttons above.</p>
+                      </div>
+                    ) : (
+                      <div className="p-3 max-h-56 overflow-y-auto space-y-2 text-left font-mono text-[10px] leading-relaxed divide-y divide-slate-800/40">
+                        {notificationLog.slice().reverse().map((log, index) => (
+                          <div key={index} className="pt-2 first:pt-0 text-slate-350 select-text">
+                            <span className="text-[8px] font-bold text-cyan-400 uppercase bg-cyan-900/10 px-1 py-0.5 rounded border border-cyan-800/10 mr-1.5">
+                              Alert Log
+                            </span>
+                            {log}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
+    </ErrorBoundary>
   );
 }

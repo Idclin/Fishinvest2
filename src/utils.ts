@@ -141,3 +141,21 @@ export function getApiUrl(path: string): string {
   const defaultBackend = 'https://ais-pre-wxa7usscgspomn6irqvlhe-245051637466.europe-west2.run.app';
   return `${defaultBackend}${cleanPath}`;
 }
+
+/**
+ * Resolves an image path correctly. If the path represents an uploaded asset
+ * (e.g., starting with '/uploads/'), it prepends the backend server endpoint
+ * so that it is fetched from the active Cloud Run server instead of Netlify/static hosting.
+ */
+export function resolveImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/uploads/')) {
+    return getApiUrl(trimmed);
+  }
+  return trimmed;
+}

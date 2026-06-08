@@ -1,3 +1,7 @@
+import meluzaImg from './assets/images/meluza_1780775025973.png';
+import schoolbianImg from './assets/images/schoolbian_1780775040988.png';
+import catfishImg from './assets/images/catfish_1780775056502.png';
+
 export interface User {
   telegram_id: string;
   name?: string;
@@ -13,6 +17,7 @@ export interface User {
   lastCheckIn?: string | null;
   virtualAccountNumber: string;
   createdAt: string;
+  status?: string;
 }
 
 export type FishType = string;
@@ -54,7 +59,7 @@ export const FISH_SPECS: Record<FishType, FishSpecs> = {
     weeklyProfit: 300,
     dailyProfit: 50,
     color: '#38bdf8', // sky blue
-    image: '/src/assets/images/meluza_1780775025973.png'
+    image: meluzaImg
   },
   schoolbian: {
     name: 'schoolbian',
@@ -63,7 +68,7 @@ export const FISH_SPECS: Record<FishType, FishSpecs> = {
     weeklyProfit: 700,
     dailyProfit: 116.67,
     color: '#4ade80', // green
-    image: '/src/assets/images/schoolbian_1780775040988.png'
+    image: schoolbianImg
   },
   catfish: {
     name: 'catfish',
@@ -72,7 +77,7 @@ export const FISH_SPECS: Record<FishType, FishSpecs> = {
     weeklyProfit: 1400,
     dailyProfit: 233.33,
     color: '#fb923c', // orange
-    image: '/src/assets/images/catfish_1780775056502.png'
+    image: catfishImg
   },
 };
 

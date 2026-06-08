@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, User, Phone, Landmark, Binary, ChevronRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
-import { getApiUrl } from '../utils.ts';
+import { getApiUrl, resolveImageUrl } from '../utils.ts';
 
 interface UserAuthProps {
   onAuthSuccess: (user: any) => void;
@@ -171,11 +171,18 @@ export default function UserAuth({ onAuthSuccess, referredByQueryParam, appIconU
         <div className="p-6 md:p-8 space-y-6">
           {/* Main system header visual */}
           <div className="text-center space-y-2">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center overflow-hidden shadow-inner font-bold">
-              {appIconUrl ? (
-                <img src={appIconUrl} alt="FishInvest Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="text-3xl">🐟</span>
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center overflow-hidden shadow-inner font-bold relative">
+              <span className="text-3xl">🐟</span>
+              {appIconUrl && (
+                <img 
+                  src={resolveImageUrl(appIconUrl)} 
+                  alt="FishInvest Logo" 
+                  className="w-full h-full object-cover absolute inset-0 z-10" 
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
               )}
             </div>
             <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent">

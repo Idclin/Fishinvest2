@@ -1,9 +1,41 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { User, FishHolding, FISH_SPECS, FishType } from '../types.ts';
-import { formatNaira, getProRatedEarnings, getActiveDays, getApiUrl } from '../utils.ts';
+import { formatNaira, getProRatedEarnings, getActiveDays, getApiUrl, resolveImageUrl } from '../utils.ts';
 import AnimatedPond from './AnimatedPond.tsx';
 import { Trophy, HelpCircle, AlertCircle, ArrowUpRight } from 'lucide-react';
+
+function calculateGrowthProgress(stakedDay: string, currentDay: string) {
+  const daysMap: Record<string, number> = {
+    monday: 6, mon: 6,
+    tuesday: 5, tue: 5,
+    wednesday: 4, wed: 4,
+    thursday: 3, thu: 3,
+    friday: 2, fri: 2,
+    saturday: 1, sat: 1,
+    sunday: 0, sun: 0,
+  };
+
+  const sDay = stakedDay.trim().toLowerCase();
+  const cDay = currentDay.trim().toLowerCase();
+
+  const totalDays = daysMap[sDay] ?? 6;
+  const daysRemaining = daysMap[cDay] ?? 0;
+
+  // Guard totalDays being 0 (meaning staked on Sunday)
+  const adjustedTotalDays = totalDays === 0 ? 7 : totalDays;
+  const adjustedDaysRemaining = daysRemaining;
+
+  const elapsed = Math.max(0, adjustedTotalDays - adjustedDaysRemaining);
+  const percent = Math.min(100, Math.round((elapsed / adjustedTotalDays) * 100));
+
+  return {
+    percent,
+    elapsed,
+    remaining: adjustedDaysRemaining,
+    total: adjustedTotalDays,
+  };
+}
 
 interface TabPondProps {
   user: User;
@@ -202,25 +234,68 @@ export default function TabPond({
                   weeklyProfit: custom.weeklyProfit !== undefined ? custom.weeklyProfit : custom.weekly_profit,
                 };
               })();
+              
+              const progress = calculateGrowthProgress(h.stakedDay, simulatedDay);
+              let barColor = "bg-gradient-to-r from-cyan-500 to-blue-500";
+              let statusLabel = "";
+
+              if (progress.percent === 100) {
+                barColor = "bg-gradient-to-r from-emerald-500 to-teal-400 animate-pulse";
+                statusLabel = "🎉 Ready for Harvest";
+              } else if (progress.remaining === 1) {
+                barColor = "bg-gradient-to-r from-amber-500 to-orange-400";
+                statusLabel = "⏳ 1 day left";
+              } else {
+                statusLabel = `⏳ ${progress.remaining} days left (Day ${progress.elapsed}/${progress.total})`;
+              }
+
               return (
-                <div key={index} className="bg-brand-box border border-cyan-900/30 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-brand-bg border border-cyan-900/20 flex items-center justify-center p-1">
-                      <img src={spec?.image} alt={spec?.displayName} referrerPolicy="no-referrer" className="w-10 h-10 object-contain" />
+                <div key={index} className="bg-brand-box border border-cyan-900/30 rounded-xl p-4 flex flex-col gap-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-lg bg-brand-bg border border-cyan-900/20 flex items-center justify-center p-1">
+                        <img 
+                          src={resolveImageUrl(spec?.image)} 
+                          alt={spec?.displayName} 
+                          referrerPolicy="no-referrer" 
+                          className="w-10 h-10 object-contain" 
+                          onError={(e) => {
+                            e.currentTarget.src = FISH_SPECS.meluza.image;
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <h5 className="font-bold text-sm text-slate-200 flex items-center gap-1.5">
+                          {spec?.displayName}
+                          <span className="text-xs font-mono font-normal text-slate-400">({h.quantity} owned)</span>
+                        </h5>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          Staked: {h.stakedDay} ({getActiveDays(h.stakedDay)}d active)
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <h5 className="font-bold text-sm text-slate-200 flex items-center gap-1.5">
-                        {spec?.displayName}
-                        <span className="text-xs font-mono font-normal text-slate-400">({h.quantity} owned)</span>
-                      </h5>
-                      <span className="text-[10px] text-slate-400 font-mono block">
-                        Staked: {h.stakedDay} ({getActiveDays(h.stakedDay)}d active)
-                      </span>
+                    <div className="text-right">
+                      <span className="text-cyan-400 font-extrabold font-mono text-sm block">+{formatNaira(h.earnings)}</span>
+                      <span className="text-[9px] text-slate-500 block">Sunday Return</span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-cyan-400 font-extrabold font-mono text-sm block">+{formatNaira(h.earnings)}</span>
-                    <span className="text-[9px] text-slate-500 block">Sunday Return</span>
+
+                  {/* Growth Progress Bar */}
+                  <div className="pt-2.5 border-t border-cyan-900/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-slate-400 font-semibold font-sans flex items-center gap-1">
+                        Growth Level: <span className="text-cyan-400 font-black font-mono">{progress.percent}%</span>
+                      </span>
+                      <span className="text-slate-300 font-mono font-bold text-[9px] bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-900/20">
+                        {statusLabel}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-brand-bg rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${barColor} rounded-full transition-all duration-500`}
+                        style={{ width: `${progress.percent}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
               );
